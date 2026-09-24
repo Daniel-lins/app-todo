@@ -67,6 +67,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
   const [description, setDescription] = useState('');
   const [color, setColor] = useState('#4f46e5');
   const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Join Form State
   const [inviteCode, setInviteCode] = useState('');
@@ -98,14 +99,16 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
     setIsCreating(true);
+    setCreateError(null);
     try {
       const created = await onCreateGroup(name.trim(), description.trim() || undefined, color);
       setName('');
       setDescription('');
       setActiveTab('list');
       setSelectedGroupDetails(created);
-    } catch (err) {
-      console.error(err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao criar grupo.';
+      setCreateError(msg);
     } finally {
       setIsCreating(false);
     }
@@ -561,6 +564,13 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                       ))}
                     </div>
                   </div>
+
+                  {createError && (
+                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{createError}</span>
+                    </div>
+                  )}
 
                   <button
                     type="submit"
