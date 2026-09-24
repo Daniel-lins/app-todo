@@ -1,7 +1,18 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { TodoItem, FilterStatus, Category, Priority, SortOption, TaskStatus, ViewMode } from '../types/todo';
+import { 
+  TodoItem, 
+  FilterStatus, 
+  Category, 
+  Priority, 
+  SortOption, 
+  TaskStatus, 
+  ViewMode,
+  UserProfile,
+  TaskGroup,
+  GroupMember
+} from '../types/todo';
 import { INITIAL_TODOS, PRIORITIES } from '../utils/todoConstants';
 import { createClient } from '../utils/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -15,6 +26,11 @@ export function useTodos() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // User Profile & Collaborative Groups state
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [groups, setGroups] = useState<TaskGroup[]>([]);
+  const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
 
   // Filters & Sorting state
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
@@ -40,6 +56,8 @@ export function useTodos() {
     order_index?: number | null;
     created_at: string;
     completed_at?: string | null;
+    group_id?: string | null;
+    created_by_name?: string | null;
     subtasks?: Array<{
       id: string;
       task_id: string;
@@ -65,6 +83,8 @@ export function useTodos() {
       order: row.order_index || 0,
       createdAt: row.created_at,
       completedAt: row.completed_at || undefined,
+      groupId: row.group_id || undefined,
+      createdByName: row.created_by_name || undefined,
       subTasks: (row.subtasks || []).map((s) => ({
         id: s.id,
         title: s.title,
@@ -73,31 +93,311 @@ export function useTodos() {
     };
   }, []);
 
-  // Fetch tasks from Supabase cloud
-  const fetchCloudTodos = useCallback(async (userId: string) => {
-    setIsSyncing(true);
+  // Profile & Groups fetching
+  const fetchUserProfile = useCallback(async (userObj: SupabaseUser) => {
     try {
       const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userObj.id)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setProfile({
+          id: data.id,
+          email: data.email || userObj.email || '',
+          displayName: data.display_name || userObj.user_metadata?.display_name || userObj.email?.split('@')[0] || 'Usuário',
+          avatarUrl: data.avatar_url || 'rocket',
+          focusMinutes: data.focus_minutes || 0,
+          completedTasksCount: data.completed_tasks_count || 0,
+          updatedAt: data.updated_at,
+        });
+      } else {
+        const initialProfile = {
+          id: userObj.id,
+          email: userObj.email || '',
+          display_name: userObj.user_metadata?.display_name || userObj.email?.split('@')[0] || 'Usuário',
+          avatar_url: 'rocket',
+          focus_minutes: 0,
+          completed_tasks_count: 0,
+        };
+        await supabase.from('profiles').insert(initialProfile);
+        setProfile({
+          id: initialProfile.id,
+          email: initialProfile.email,
+          displayName: initialProfile.display_name,
+          avatarUrl: initialProfile.avatar_url,
+          focusMinutes: 0,
+          completedTasksCount: 0,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load profile', err);
+    }
+  }, [supabase]);
+
+  const updateProfile = useCallback(async (displayName: string, avatarUrl: string) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: displayName,
+          avatar_url: avatarUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      setProfile((prev) => (prev ? { ...prev, displayName, avatarUrl } : null));
+    } catch (err) {
+      console.error('Failed to update profile', err);
+      throw err;
+    }
+  }, [user, supabase]);
+
+  const fetchCloudGroups = useCallback(async (userId: string) => {
+    try {
+      const { data: memberRows, error: memberErr } = await supabase
+        .from('group_members')
+        .select('group_id, role')
+        .eq('user_id', userId);
+
+      if (memberErr) throw memberErr;
+      if (!memberRows || memberRows.length === 0) {
+        setGroups([]);
+        return;
+      }
+
+      const groupIds = memberRows.map((m) => m.group_id);
+      const { data: groupsData, error: groupsErr } = await supabase
+        .from('groups')
+        .select('*')
+        .in('id', groupIds);
+
+      if (groupsErr) throw groupsErr;
+
+      const formatted: TaskGroup[] = (groupsData || []).map((g) => {
+        const membership = memberRows.find((m) => m.group_id === g.id);
+        return {
+          id: g.id,
+          name: g.name,
+          description: g.description || undefined,
+          color: g.color || '#4f46e5',
+          inviteCode: g.invite_code,
+          createdBy: g.created_by,
+          createdAt: g.created_at,
+          role: (membership?.role as 'owner' | 'member') || 'member',
+        };
+      });
+
+      setGroups(formatted);
+    } catch (err) {
+      console.error('Failed to fetch groups', err);
+    }
+  }, [supabase]);
+
+  const createGroup = useCallback(async (name: string, description?: string, color?: string): Promise<TaskGroup> => {
+    if (!user) throw new Error('É necessário estar conectado para criar grupos.');
+    
+    const randomChars = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const inviteCode = `TODO-${randomChars}`;
+
+    const { data: newGroup, error: groupErr } = await supabase
+      .from('groups')
+      .insert({
+        name,
+        description: description || null,
+        color: color || '#4f46e5',
+        invite_code: inviteCode,
+        created_by: user.id,
+      })
+      .select()
+      .single();
+
+    if (groupErr) throw groupErr;
+
+    const { error: memberErr } = await supabase
+      .from('group_members')
+      .insert({
+        group_id: newGroup.id,
+        user_id: user.id,
+        role: 'owner',
+      });
+
+    if (memberErr) throw memberErr;
+
+    const createdGroup: TaskGroup = {
+      id: newGroup.id,
+      name: newGroup.name,
+      description: newGroup.description || undefined,
+      color: newGroup.color,
+      inviteCode: newGroup.invite_code,
+      createdBy: newGroup.created_by,
+      createdAt: newGroup.created_at,
+      role: 'owner',
+    };
+
+    setGroups((prev) => [createdGroup, ...prev]);
+    setCurrentGroupId(createdGroup.id);
+    return createdGroup;
+  }, [user, supabase]);
+
+  const joinGroupByCode = useCallback(async (code: string): Promise<{ success: boolean; message: string }> => {
+    if (!user) return { success: false, message: 'Faça login para entrar em um grupo.' };
+    
+    const cleanCode = code.trim().toUpperCase();
+    
+    const { data: foundGroup, error: findErr } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('invite_code', cleanCode)
+      .maybeSingle();
+
+    if (findErr || !foundGroup) {
+      return { success: false, message: 'Código de convite inválido ou grupo não encontrado.' };
+    }
+
+    const { data: existingMember } = await supabase
+      .from('group_members')
+      .select('id')
+      .eq('group_id', foundGroup.id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingMember) {
+      setCurrentGroupId(foundGroup.id);
+      return { success: true, message: 'Você já faz parte deste grupo! Grupo ativado.' };
+    }
+
+    const { error: joinErr } = await supabase
+      .from('group_members')
+      .insert({
+        group_id: foundGroup.id,
+        user_id: user.id,
+        role: 'member',
+      });
+
+    if (joinErr) {
+      return { success: false, message: 'Não foi possível entrar no grupo. Tente novamente.' };
+    }
+
+    const joinedGroup: TaskGroup = {
+      id: foundGroup.id,
+      name: foundGroup.name,
+      description: foundGroup.description || undefined,
+      color: foundGroup.color,
+      inviteCode: foundGroup.invite_code,
+      createdBy: foundGroup.created_by,
+      createdAt: foundGroup.created_at,
+      role: 'member',
+    };
+
+    setGroups((prev) => [...prev, joinedGroup]);
+    setCurrentGroupId(joinedGroup.id);
+    return { success: true, message: `Você entrou no grupo "${foundGroup.name}" com sucesso!` };
+  }, [user, supabase]);
+
+  const leaveGroup = useCallback(async (groupId: string) => {
+    if (!user) return;
+    await supabase
+      .from('group_members')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('user_id', user.id);
+
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    if (currentGroupId === groupId) {
+      setCurrentGroupId(null);
+    }
+  }, [user, supabase, currentGroupId]);
+
+  const deleteGroup = useCallback(async (groupId: string) => {
+    if (!user) return;
+    await supabase
+      .from('groups')
+      .delete()
+      .eq('id', groupId)
+      .eq('created_by', user.id);
+
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    if (currentGroupId === groupId) {
+      setCurrentGroupId(null);
+    }
+  }, [user, supabase, currentGroupId]);
+
+  const fetchGroupMembers = useCallback(async (groupId: string): Promise<GroupMember[]> => {
+    try {
+      const { data: members, error } = await supabase
+        .from('group_members')
+        .select('id, group_id, user_id, role, joined_at')
+        .eq('group_id', groupId);
+
+      if (error || !members) return [];
+
+      const userIds = members.map((m) => m.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', userIds);
+
+      return members.map((m) => {
+        const p = (profiles || []).find((pr) => pr.id === m.user_id);
+        return {
+          id: m.id,
+          groupId: m.group_id,
+          userId: m.user_id,
+          role: m.role as 'owner' | 'member',
+          joinedAt: m.joined_at,
+          profile: p ? {
+            id: p.id,
+            email: p.email,
+            displayName: p.display_name || p.email?.split('@')[0] || 'Membro',
+            avatarUrl: p.avatar_url || 'rocket',
+          } : undefined,
+        };
+      });
+    } catch (err) {
+      console.error('Error fetching group members', err);
+      return [];
+    }
+  }, [supabase]);
+
+  // Fetch tasks from Supabase cloud
+  const fetchCloudTodos = useCallback(async (userId: string, targetGroupId: string | null = null) => {
+    setIsSyncing(true);
+    try {
+      let query = supabase
         .from('tasks')
         .select('*, subtasks(*)')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
+      if (targetGroupId) {
+        query = query.eq('group_id', targetGroupId);
+      } else {
+        query = query.eq('user_id', userId).is('group_id', null);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
 
       if (data && data.length > 0) {
         const cloudList = (data as unknown as SupabaseTaskRow[]).map(mapDbToTodo);
         setTodos(cloudList);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudList));
-      } else {
-        // Cloud has no tasks yet for this user.
+        if (!targetGroupId) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudList));
+        }
+      } else if (!targetGroupId) {
+        // Cloud has no tasks yet for this user in personal space.
         // Check if there are local tasks to migrate to cloud
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
           try {
             const localList: TodoItem[] = JSON.parse(stored);
             if (localList.length > 0 && localList !== INITIAL_TODOS) {
-              // Upload local tasks to cloud
               for (const item of localList) {
                 await supabase.from('tasks').insert({
                   id: item.id,
@@ -115,6 +415,7 @@ export function useTodos() {
                   order_index: item.order || 0,
                   created_at: item.createdAt,
                   completed_at: item.completedAt || null,
+                  group_id: null,
                 });
                 if (item.subTasks && item.subTasks.length > 0) {
                   await supabase.from('subtasks').insert(
@@ -132,6 +433,9 @@ export function useTodos() {
             // ignore
           }
         }
+        setTodos([]);
+      } else {
+        setTodos([]);
       }
     } catch (err) {
       console.error('Failed to sync with Supabase', err);
@@ -147,7 +451,9 @@ export function useTodos() {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
-        fetchCloudTodos(currentUser.id);
+        fetchUserProfile(currentUser);
+        fetchCloudGroups(currentUser.id);
+        fetchCloudTodos(currentUser.id, currentGroupId);
       } else {
         // Load from localStorage for guest / offline mode
         try {
@@ -175,7 +481,13 @@ export function useTodos() {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
         if (currentUser) {
-          fetchCloudTodos(currentUser.id);
+          fetchUserProfile(currentUser);
+          fetchCloudGroups(currentUser.id);
+          fetchCloudTodos(currentUser.id, currentGroupId);
+        } else {
+          setProfile(null);
+          setGroups([]);
+          setCurrentGroupId(null);
         }
       }
     );
@@ -183,7 +495,14 @@ export function useTodos() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [supabase, fetchCloudTodos]);
+  }, [supabase, fetchCloudTodos, fetchUserProfile, fetchCloudGroups, currentGroupId]);
+
+  // Switch tasks when currentGroupId changes
+  useEffect(() => {
+    if (user) {
+      fetchCloudTodos(user.id, currentGroupId);
+    }
+  }, [currentGroupId, user, fetchCloudTodos]);
 
   // Realtime subscription for Supabase tasks
   useEffect(() => {
@@ -223,6 +542,8 @@ export function useTodos() {
         id: 'todo-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
         createdAt: new Date().toISOString(),
         completed: false,
+        groupId: currentGroupId || undefined,
+        createdByName: profile?.displayName || user?.email?.split('@')[0] || undefined,
       };
 
       // Optimistic update
@@ -246,6 +567,8 @@ export function useTodos() {
             pomodoros: newTodo.pomodoros || 0,
             order_index: newTodo.order || 0,
             created_at: newTodo.createdAt,
+            group_id: currentGroupId || null,
+            created_by_name: profile?.displayName || user.email?.split('@')[0] || null,
           });
 
           if (newTodo.subTasks && newTodo.subTasks.length > 0) {
@@ -265,7 +588,7 @@ export function useTodos() {
 
       return newTodo;
     },
-    [user, supabase]
+    [user, supabase, currentGroupId, profile]
   );
 
   const updateTodo = useCallback(
@@ -352,13 +675,22 @@ export function useTodos() {
               .from('subtasks')
               .update({ completed: true })
               .eq('task_id', id);
+
+            if (profile) {
+              const nextCount = (profile.completedTasksCount || 0) + 1;
+              setProfile((p) => (p ? { ...p, completedTasksCount: nextCount } : null));
+              await supabase
+                .from('profiles')
+                .update({ completed_tasks_count: nextCount })
+                .eq('id', user.id);
+            }
           }
         } catch (err) {
           console.error('Cloud toggle failed:', err);
         }
       }
     },
-    [user, supabase]
+    [user, supabase, profile]
   );
 
   const togglePin = useCallback(
@@ -647,12 +979,20 @@ export function useTodos() {
       if (user) {
         try {
           await supabase.from('tasks').update({ pomodoros: nextCount }).eq('id', id);
+          if (profile) {
+            const nextFocus = (profile.focusMinutes || 0) + 25;
+            setProfile((p) => (p ? { ...p, focusMinutes: nextFocus } : null));
+            await supabase
+              .from('profiles')
+              .update({ focus_minutes: nextFocus })
+              .eq('id', user.id);
+          }
         } catch (err) {
           console.error('Cloud increment pomodoro failed:', err);
         }
       }
     },
-    [user, supabase]
+    [user, supabase, profile]
   );
 
   // Import / Export tools
@@ -856,5 +1196,15 @@ export function useTodos() {
     reorderTodos,
     incrementPomodoro,
     importTodos,
+    profile,
+    updateProfile,
+    groups,
+    currentGroupId,
+    setCurrentGroupId,
+    createGroup,
+    joinGroupByCode,
+    leaveGroup,
+    deleteGroup,
+    fetchGroupMembers,
   };
 }

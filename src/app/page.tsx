@@ -13,7 +13,9 @@ import {
   Bell,
   BellRing,
   Cloud,
-  Loader2
+  Loader2,
+  Users as UsersIcon,
+  User as UserIcon
 } from 'lucide-react';
 import { useTodos } from '../hooks/useTodos';
 import { TodoItem } from '../types/todo';
@@ -27,6 +29,9 @@ import { PomodoroModal } from '../components/PomodoroModal';
 import { BackupModal } from '../components/BackupModal';
 import { ShortcutsModal } from '../components/ShortcutsModal';
 import { AuthModal } from '../components/AuthModal';
+import { ProfileModal, AVATAR_PRESETS } from '../components/ProfileModal';
+import { GroupsModal } from '../components/GroupsModal';
+import { createClient } from '../utils/supabase/client';
 
 export default function Home() {
   const {
@@ -62,6 +67,16 @@ export default function Home() {
     moveTaskStatus,
     incrementPomodoro,
     importTodos,
+    profile,
+    updateProfile,
+    groups,
+    currentGroupId,
+    setCurrentGroupId,
+    createGroup,
+    joinGroupByCode,
+    leaveGroup,
+    deleteGroup,
+    fetchGroupMembers,
   } = useTodos();
 
   // Modals state
@@ -74,6 +89,8 @@ export default function Home() {
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isGroupsOpen, setIsGroupsOpen] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
 
   // Check notification permission on mount
@@ -175,6 +192,9 @@ export default function Home() {
   const pinnedTasks = filteredTodos.filter((t) => t.pinned && !t.completed);
   const regularTasks = filteredTodos.filter((t) => !t.pinned || t.completed);
 
+  const avatarPreset = AVATAR_PRESETS.find((a) => a.id === profile?.avatarUrl) || AVATAR_PRESETS[0];
+  const activeGroup = groups.find((g) => g.id === currentGroupId) || null;
+
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-zinc-50 via-white to-zinc-100 dark:from-[#090d16] dark:via-[#0c111d] dark:to-[#090d16] text-zinc-900 dark:text-zinc-100 flex flex-col">
       {/* Subtle background ambient glows */}
@@ -196,7 +216,7 @@ export default function Home() {
                   AppToDo
                 </h1>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                  <Sparkles className="w-3 h-3" /> v1.1
+                  <Sparkles className="w-3 h-3" /> v1.2
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
@@ -229,26 +249,62 @@ export default function Home() {
               )}
             </button>
 
-            {/* Cloud Sync / Account Button */}
+            {/* Groups Switcher Button */}
             <button
               type="button"
-              onClick={() => setIsAuthOpen(true)}
-              title={user ? `Conectado como ${user.email} (Supabase Cloud)` : 'Conectar à Nuvem Supabase'}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border transition-all text-xs font-semibold ${
-                user
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
-                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30'
+              onClick={() => setIsGroupsOpen(true)}
+              title={activeGroup ? `Grupo: ${activeGroup.name}` : 'Grupos Compartilhados'}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
+                activeGroup
+                  ? 'border-indigo-500/40 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
+                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-indigo-500/30 hover:bg-zinc-100 dark:hover:bg-zinc-800'
               }`}
             >
-              {isSyncing ? (
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-500" />
+              {activeGroup ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: activeGroup.color }} />
+                  <span className="max-w-[90px] sm:max-w-[120px] truncate">{activeGroup.name}</span>
+                </>
               ) : (
-                <Cloud className={`w-4 h-4 ${user ? 'text-emerald-500' : 'text-indigo-500'}`} />
+                <>
+                  <UsersIcon className="w-4 h-4 text-indigo-500" />
+                  <span className="hidden sm:inline">Grupos</span>
+                  {groups.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold">
+                      {groups.length}
+                    </span>
+                  )}
+                </>
               )}
-              <span className="hidden sm:inline">
-                {user ? (user.email?.split('@')[0] || 'Nuvem') : 'Nuvem'}
-              </span>
             </button>
+
+            {/* User Profile / Auth Button */}
+            {user ? (
+              <button
+                type="button"
+                onClick={() => setIsProfileOpen(true)}
+                title="Meu Perfil & Desempenho"
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/40 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all text-xs font-semibold text-zinc-800 dark:text-zinc-200"
+              >
+                <div className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${avatarPreset.bg} flex items-center justify-center text-xs shadow-sm`}>
+                  {avatarPreset.emoji}
+                </div>
+                <span className="max-w-[90px] truncate hidden sm:inline">
+                  {profile?.displayName || user.email?.split('@')[0] || 'Perfil'}
+                </span>
+                {isSyncing && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAuthOpen(true)}
+                title="Conectar à Nuvem Supabase"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all text-xs font-semibold"
+              >
+                <Cloud className="w-4 h-4 text-indigo-500" />
+                <span className="hidden sm:inline">Entrar</span>
+              </button>
+            )}
 
             <ThemeToggle />
 
@@ -262,6 +318,40 @@ export default function Home() {
             </button>
           </div>
         </header>
+
+        {/* Active Collaborative Group Banner */}
+        {activeGroup && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/50">
+            <div className="flex items-center gap-2.5">
+              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: activeGroup.color }} />
+              <div>
+                <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 block">
+                  Grupo Compartilhado: {activeGroup.name}
+                </span>
+                <span className="text-[11px] text-indigo-700/80 dark:text-indigo-400">
+                  {activeGroup.description || 'Tarefas compartilhadas e sincronizadas em tempo real'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsGroupsOpen(true)}
+                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 transition-colors"
+              >
+                Código: <span className="font-mono">{activeGroup.inviteCode}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentGroupId(null)}
+                className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline ml-1"
+              >
+                Voltar para Pessoal
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Productivity Analytics Overview */}
         <StatsBar stats={stats} />
@@ -473,6 +563,36 @@ export default function Home() {
         onClose={() => setIsAuthOpen(false)}
         user={user}
         onAuthSuccess={refetchCloud}
+      />
+
+      {/* User Profile Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        profile={profile}
+        groups={groups}
+        onUpdateProfile={updateProfile}
+        onSignOut={async () => {
+          const supabase = createClient();
+          await supabase.auth.signOut();
+          refetchCloud();
+        }}
+      />
+
+      {/* Collaborative Groups Modal */}
+      <GroupsModal
+        isOpen={isGroupsOpen}
+        onClose={() => setIsGroupsOpen(false)}
+        groups={groups}
+        currentGroupId={currentGroupId}
+        onSelectGroup={setCurrentGroupId}
+        onCreateGroup={createGroup}
+        onJoinGroup={joinGroupByCode}
+        onLeaveGroup={leaveGroup}
+        onDeleteGroup={deleteGroup}
+        onFetchMembers={fetchGroupMembers}
+        isLoggedIn={!!user}
+        onOpenAuth={() => setIsAuthOpen(true)}
       />
     </div>
   );
