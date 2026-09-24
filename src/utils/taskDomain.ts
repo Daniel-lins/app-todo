@@ -185,6 +185,10 @@ export function sanitizeTaskUpdates(
     cleanUpdates.pomodoros = updates.pomodoros;
     dbUpdates.pomodoros = updates.pomodoros;
   }
+  if ('order' in updates && updates.order !== undefined) {
+    cleanUpdates.order = updates.order;
+    dbUpdates.order_index = updates.order;
+  }
 
   // Status e Conclusão: regra central para nunca divergirem
   if ('status' in updates || 'completed' in updates) {

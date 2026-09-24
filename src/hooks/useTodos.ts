@@ -88,6 +88,7 @@ export function useTodos() {
     created_at: string;
     completed_at?: string | null;
     pomodoros?: number;
+    order_index?: number;
     order?: number;
     group_id?: string | null;
     created_by_name?: string | null;
@@ -114,7 +115,7 @@ export function useTodos() {
       createdAt: row.created_at,
       completedAt: row.completed_at || undefined,
       pomodoros: row.pomodoros || 0,
-      order: row.order || 0,
+      order: row.order_index ?? row.order ?? 0,
       groupId: row.group_id || undefined,
       createdByName: row.created_by_name || undefined,
       syncState: 'synced',
@@ -279,7 +280,7 @@ export function useTodos() {
             created_at,
             completed_at,
             pomodoros,
-            order,
+            order_index,
             group_id,
             created_by_name,
             updated_at,
@@ -289,7 +290,7 @@ export function useTodos() {
               completed
             )
           `)
-          .order('order', { ascending: true });
+          .order('order_index', { ascending: true });
 
         if (activeGroup) {
           query = query.eq('group_id', activeGroup);
@@ -544,7 +545,7 @@ export function useTodos() {
             pinned: newTask.pinned,
             created_at: newTask.createdAt,
             pomodoros: 0,
-            order: newTask.order,
+            order_index: newTask.order ?? 0,
             created_by_name: newTask.createdByName || null,
           });
 
