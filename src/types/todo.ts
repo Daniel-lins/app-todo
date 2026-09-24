@@ -12,6 +12,9 @@ export interface SubTask {
   completed: boolean;
 }
 
+export type TaskSyncState = 'synced' | 'syncing' | 'local_only' | 'error';
+export type AppSyncStatus = 'synced' | 'syncing' | 'local_only' | 'error';
+
 export interface TodoItem {
   id: string;
   title: string;
@@ -30,6 +33,9 @@ export interface TodoItem {
   order?: number;
   groupId?: string;
   createdByName?: string;
+  syncState?: TaskSyncState;
+  syncError?: string;
+  updatedAt?: string;
 }
 
 export type FilterStatus = 'all' | 'active' | 'completed' | 'pinned' | 'today';
@@ -65,6 +71,23 @@ export interface GroupMember {
   role: 'owner' | 'member';
   joinedAt: string;
   profile?: UserProfile;
+  displayName?: string;
+  email?: string;
 }
+
+export interface TaskStats {
+  total: number;
+  completed: number;
+  active: number;
+  pinned: number;
+  urgent: number;
+  rate: number;
+  todayTotal: number;
+  todayCompleted: number;
+  todayPending: number;
+  todayCount: number;
+  overdue: number;
+}
+
 
 

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "jiti tests/todoStorage.test.ts && jiti tests/destructiveOperations.test.ts && jiti tests/syncOperations.test.ts && jiti tests/groupCollaboration.test.ts && jiti tests/taskDomain.test.ts && jiti tests/authRecovery.test.ts && jiti tests/pomodoroNotifications.test.ts && jiti tests/backupImportExport.test.ts && jiti tests/accessibilityInteraction.test.ts && jiti tests/uiHierarchyOptimization.test.ts && jiti tests/themeConsolidation.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

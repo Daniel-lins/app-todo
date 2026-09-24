@@ -1,34 +1,24 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   X, 
   Check, 
-  User, 
   Mail, 
   LogOut, 
   Award, 
   Clock, 
   Users, 
-  Flame, 
   Loader2, 
   CheckCircle2, 
   Edit3,
   Sparkles
 } from 'lucide-react';
 import { UserProfile, TaskGroup } from '../types/todo';
-import { createClient } from '../utils/supabase/client';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
+import { AVATAR_PRESETS } from '../utils/todoConstants';
 
-export const AVATAR_PRESETS = [
-  { id: 'rocket', emoji: '🚀', label: 'Explorador', bg: 'from-blue-600 to-indigo-600' },
-  { id: 'zap', emoji: '⚡', label: 'Ágil', bg: 'from-amber-500 to-orange-600' },
-  { id: 'wizard', emoji: '🧙‍♂️', label: 'Foco Supremo', bg: 'from-purple-600 to-violet-700' },
-  { id: 'owl', emoji: '🦉', label: 'Sábio', bg: 'from-emerald-600 to-teal-700' },
-  { id: 'robot', emoji: '🤖', label: 'Produtivo', bg: 'from-cyan-600 to-blue-700' },
-  { id: 'lion', emoji: '🦁', label: 'Líder', bg: 'from-yellow-500 to-amber-600' },
-  { id: 'target', emoji: '🎯', label: 'Focado', bg: 'from-rose-600 to-red-600' },
-  { id: 'star', emoji: '✨', label: 'Criativo', bg: 'from-fuchsia-600 to-pink-600' },
-];
+export { AVATAR_PRESETS } from '../utils/todoConstants';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -39,7 +29,7 @@ interface ProfileModalProps {
   onSignOut: () => void;
 }
 
-export const ProfileModal: React.FC<ProfileModalProps> = ({
+const ProfileModalContent: React.FC<Omit<ProfileModalProps, 'profile'> & { profile: UserProfile }> = ({
   isOpen,
   onClose,
   profile,
@@ -47,20 +37,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   onUpdateProfile,
   onSignOut,
 }) => {
-  const [displayName, setDisplayName] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState('rocket');
+  const [displayName, setDisplayName] = useState(profile.displayName || '');
+  const [selectedAvatar, setSelectedAvatar] = useState(profile.avatarUrl || 'rocket');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (profile) {
-      setDisplayName(profile.displayName || '');
-      setSelectedAvatar(profile.avatarUrl || 'rocket');
-    }
-  }, [profile, isOpen]);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
-  if (!isOpen || !profile) return null;
+  // Hook de acessibilidade: contenção de foco, foco inicial e devolução ao fechar
+  const { modalRef } = useAccessibleModal({
+    isOpen,
+    onClose,
+    initialFocusRef: nameInputRef,
+  });
 
   const currentPreset = AVATAR_PRESETS.find((a) => a.id === selectedAvatar) || AVATAR_PRESETS[0];
 
@@ -75,181 +65,240 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     try {
       await onUpdateProfile(displayName.trim(), selectedAvatar);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    } catch {
-      setErrorMsg('Não foi possível salvar o perfil. Tente novamente.');
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Falha ao atualizar perfil.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const focusHours = Math.floor((profile.focusMinutes || 0) / 60);
-  const focusRemainderMinutes = (profile.focusMinutes || 0) % 60;
-  const focusTimeDisplay = focusHours > 0 
-    ? `${focusHours}h ${focusRemainderMinutes}m` 
-    : `${focusRemainderMinutes}m`;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-[#0f1422] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-2xl shadow-black/40 overflow-hidden">
-        {/* Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+        className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-zinc-900 dark:text-zinc-100"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-500" />
+            <h2 id="profile-modal-title" className="text-lg font-bold">
+              Meu Perfil & Desempenho
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar modal de perfil"
+            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        {/* Header Profile Info */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 pb-6 border-b border-zinc-200/80 dark:border-zinc-800/80">
-          <div className={`w-20 h-20 rounded-3xl bg-gradient-to-tr ${currentPreset.bg} flex items-center justify-center text-3xl shadow-xl shadow-indigo-500/20 shrink-0 transform transition-transform hover:scale-105`}>
-            {currentPreset.emoji}
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Header Profile Identity */}
+          <div className="flex flex-col sm:flex-row items-center gap-4 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-700/60">
+            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-tr ${currentPreset.bg} flex items-center justify-center text-3xl shadow-md shrink-0`}>
+              {currentPreset.emoji}
+            </div>
+            <div className="text-center sm:text-left overflow-hidden">
+              <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                {profile.displayName || 'Usuário Sem Nome'}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-center sm:justify-start gap-1.5 mt-1 truncate">
+                <Mail className="w-3.5 h-3.5" />
+                <span>{profile.email}</span>
+              </p>
+              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1 flex items-center justify-center sm:justify-start gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Conta sincronizada na nuvem
+              </p>
+            </div>
           </div>
 
-          <div className="text-center sm:text-left flex-1 min-w-0">
-            <div className="flex items-center justify-center sm:justify-start gap-2">
-              <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                {profile.displayName || 'Usuário'}
-              </h2>
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                <Sparkles className="w-3 h-3" /> Membro
+          {/* Personal Analytics Grid */}
+          <div className="grid grid-cols-3 gap-3 my-6">
+            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
+              <div className="flex items-center justify-center text-indigo-500 mb-1">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <span className="block text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                {profile.completedTasksCount || 0}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Concluídas
               </span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-center sm:justify-start gap-1.5 mt-1 truncate">
-              <Mail className="w-3.5 h-3.5" />
-              <span>{profile.email}</span>
-            </p>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-1 flex items-center justify-center sm:justify-start gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Conta sincronizada no Supabase
-            </p>
-          </div>
-        </div>
 
-        {/* Personal Analytics Grid */}
-        <div className="grid grid-cols-3 gap-3 my-6">
-          <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
-            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-1.5">
-              <Award className="w-4 h-4" />
+            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
+              <div className="flex items-center justify-center text-rose-500 mb-1">
+                <Clock className="w-5 h-5" />
+              </div>
+              <span className="block text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                {profile.focusMinutes || 0}m
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Foco Pomodoro
+              </span>
             </div>
-            <div className="text-lg font-black text-zinc-900 dark:text-zinc-100">
-              {profile.completedTasksCount || 0}
-            </div>
-            <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-              Tarefas Concluídas
-            </div>
-          </div>
 
-          <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-1.5">
-              <Clock className="w-4 h-4" />
-            </div>
-            <div className="text-lg font-black text-zinc-900 dark:text-zinc-100">
-              {focusTimeDisplay}
-            </div>
-            <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-              Tempo de Foco
+            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
+              <div className="flex items-center justify-center text-emerald-500 mb-1">
+                <Users className="w-5 h-5" />
+              </div>
+              <span className="block text-xl font-bold text-zinc-900 dark:text-zinc-100">
+                {groups.length}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Grupos
+              </span>
             </div>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 text-center">
-            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-1.5">
-              <Users className="w-4 h-4" />
-            </div>
-            <div className="text-lg font-black text-zinc-900 dark:text-zinc-100">
-              {groups.length}
-            </div>
-            <div className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-              Grupos Ativos
-            </div>
-          </div>
-        </div>
+          {/* Edit Profile Form */}
+          <form onSubmit={handleSave} className="space-y-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Editar Informações</span>
+            </h4>
 
-        {/* Edit Profile Form */}
-        <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">
-              Escolha seu Avatar:
-            </label>
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-              {AVATAR_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => setSelectedAvatar(preset.id)}
-                  title={preset.label}
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg transition-all ${
-                    selectedAvatar === preset.id
-                      ? 'ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-[#0f1422] scale-110 shadow-md'
-                      : 'bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200 dark:hover:bg-zinc-800 opacity-80 hover:opacity-100'
-                  }`}
-                >
-                  {preset.emoji}
-                </button>
-              ))}
-            </div>
-          </div>
+            {errorMsg && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs"
+              >
+                {errorMsg}
+              </div>
+            )}
 
-          <div>
-            <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
-              Nome de Exibição
-            </label>
-            <div className="relative">
-              <Edit3 className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            {saveSuccess && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                <span>Perfil atualizado com sucesso!</span>
+              </div>
+            )}
+
+            <div>
+              <label
+                htmlFor="profile-display-name-input"
+                className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
+              >
+                Nome de Exibição
+              </label>
               <input
+                id="profile-display-name-input"
+                ref={nameInputRef}
                 type="text"
-                required
-                maxLength={40}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Como prefere ser chamado?"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                maxLength={40}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-          </div>
 
-          {errorMsg && (
-            <p className="text-xs text-rose-500 dark:text-rose-400 font-medium">
-              {errorMsg}
-            </p>
-          )}
-
-          {saveSuccess && (
-            <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>Perfil atualizado com sucesso!</span>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
+                Escolha seu Avatar
+              </label>
+              <div className="grid grid-cols-4 gap-2.5">
+                {AVATAR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setSelectedAvatar(preset.id)}
+                    aria-pressed={selectedAvatar === preset.id}
+                    className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border transition-all ${
+                      selectedAvatar === preset.id
+                        ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 ring-2 ring-indigo-500/30'
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900'
+                    }`}
+                  >
+                    <span className="text-2xl mb-1">{preset.emoji}</span>
+                    <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-400 truncate max-w-full">
+                      {preset.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
 
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-60"
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Check className="w-4 h-4 stroke-[2.5]" />
-              )}
-              <span>Salvar Alterações</span>
-            </button>
+            <div className="pt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-all disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Salvar Alterações</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
 
+          {/* Account Actions Section */}
+          <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-3 flex items-center gap-1.5">
+              <Award className="w-3.5 h-3.5" />
+              <span>Ações da Conta</span>
+            </h4>
             <button
               type="button"
               onClick={() => {
-                onSignOut();
                 onClose();
+                onSignOut();
               }}
-              className="py-2.5 px-4 rounded-xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-zinc-800 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 text-zinc-700 dark:text-zinc-300 font-semibold text-sm transition-colors flex items-center gap-1.5"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/40 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Desconectar</span>
+              <span>Desconectar desta Conta</span>
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
+  );
+};
+
+export const ProfileModal: React.FC<ProfileModalProps> = ({
+  isOpen,
+  onClose,
+  profile,
+  groups,
+  onUpdateProfile,
+  onSignOut,
+}) => {
+  if (!isOpen || !profile) return null;
+
+  return (
+    <ProfileModalContent
+      key={profile.id}
+      isOpen={isOpen}
+      onClose={onClose}
+      profile={profile}
+      groups={groups}
+      onUpdateProfile={onUpdateProfile}
+      onSignOut={onSignOut}
+    />
   );
 };

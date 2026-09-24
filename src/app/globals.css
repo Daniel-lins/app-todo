@@ -1,31 +1,80 @@
 @import "tailwindcss";
 
+/* Estratégia de tema compatível com Tailwind CSS v4 para alternância por classe/seletor */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Tokens de design unificados para superfícies, texto, bordas, foco e cores semânticas */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #fbfbfb;
+  --foreground: #18181b;
+
+  /* Superfícies */
+  --surface-page: #fbfbfb;
+  --surface-sidebar: #f5f5f7;
+  --surface-card: #ffffff;
+  --surface-card-hover: #fafafa;
+  --surface-subtle: #f4f4f6;
+  --surface-elevated: #ffffff;
+
+  /* Texto com contraste garantido (WCAG AA/AAA) */
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+
+  /* Bordas estruturais */
+  --border-subtle: #e8e8ec;
+  --border-strong: #d4d4d8;
+
+  /* Foco e cores semânticas */
+  --focus-ring: #5b4fe9;
+  --focus-ring-offset: #ffffff;
+  --color-brand: #5b4fe9;
+  --color-brand-light: #ede9fe;
 }
 
-.dark {
-  --background: #090d16;
-  --foreground: #f1f5f9;
-}
+.dark,
+[data-theme="dark"] {
+  --background: #0f1015;
+  --foreground: #f4f4f5;
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --background: #090d16;
-    --foreground: #f1f5f9;
-  }
+  /* Superfícies */
+  --surface-page: #0f1015;
+  --surface-sidebar: #14151b;
+  --surface-card: #191a21;
+  --surface-card-hover: #21222b;
+  --surface-subtle: #242530;
+  --surface-elevated: #1e1f28;
+
+  /* Texto */
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+
+  /* Bordas */
+  --border-subtle: #242530;
+  --border-strong: #3f3f46;
+
+  /* Foco e cores semânticas */
+  --focus-ring: #7c6ff5;
+  --focus-ring-offset: #14151b;
+  --color-brand: #7c6ff5;
+  --color-brand-light: #242247;
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom modern scrollbar */
+/* Custom modern scrollbar com contraste balanceado em ambos os temas */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -36,10 +85,28 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.4);
+  background: rgba(161, 161, 170, 0.4);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.7);
+  background: rgba(161, 161, 170, 0.7);
+}
+
+/* Acessibilidade: Respeito estrito à preferência do sistema por Movimento Reduzido */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Indicadores nítidos de foco acessível para navegação por teclado nos dois temas */
+:focus-visible {
+  outline: 2px solid var(--focus-ring, #6366f1);
+  outline-offset: 2px;
 }

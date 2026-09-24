@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Keyboard, X } from 'lucide-react';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -9,6 +10,12 @@ interface ShortcutsModalProps {
 }
 
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose }) => {
+  // Hook de acessibilidade
+  const { modalRef } = useAccessibleModal({
+    isOpen,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   const shortcuts = [
@@ -22,6 +29,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcuts-modal-title"
         className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden transition-all text-zinc-900 dark:text-zinc-100"
         onClick={(e) => e.stopPropagation()}
       >
@@ -32,14 +43,15 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
               <Keyboard className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Atalhos de Teclado</h3>
-              <p className="text-xs text-zinc-400">Navegue com muito mais agilidade</p>
+              <h2 id="shortcuts-modal-title" className="text-base font-bold">Atalhos de Teclado</h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">Navegue com muito mais agilidade</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            aria-label="Fechar painel de atalhos"
+            className="p-2 rounded-xl text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
           >
             <X className="w-4 h-4" />
           </button>
@@ -62,8 +74,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
           ))}
         </div>
 
-        <p className="text-[11px] text-zinc-400 text-center mt-5">
-          Os atalhos são desativados automaticamente ao digitar em caixas de texto.
+        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 text-center mt-5">
+          Os atalhos são desativados automaticamente ao digitar em caixas de texto ou com modais abertos.
         </p>
       </div>
     </div>

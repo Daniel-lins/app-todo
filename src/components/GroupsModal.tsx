@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   X, 
   Users, 
@@ -18,6 +18,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { TaskGroup, GroupMember } from '../types/todo';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 const GROUP_COLORS = [
   { name: 'Índigo', value: '#4f46e5' },
@@ -78,16 +79,22 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (selectedGroupDetails) {
-      setLoadingMembers(true);
-      onFetchMembers(selectedGroupDetails.id)
-        .then((m) => setMembers(m))
-        .finally(() => setLoadingMembers(false));
-    }
-  }, [selectedGroupDetails, onFetchMembers]);
+  // Hook de acessibilidade
+  const { modalRef } = useAccessibleModal({
+    isOpen,
+    onClose,
+  });
 
   if (!isOpen) return null;
+
+  const handleOpenGroupDetails = (group: TaskGroup) => {
+    setSelectedGroupDetails(group);
+    setLoadingMembers(true);
+    onFetchMembers(group.id)
+      .then((m) => setMembers(m))
+      .catch(() => setMembers([]))
+      .finally(() => setLoadingMembers(false));
+  };
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -105,7 +112,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
       setName('');
       setDescription('');
       setActiveTab('list');
-      setSelectedGroupDetails(created);
+      handleOpenGroupDetails(created);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao criar grupo.';
       setCreateError(msg);
@@ -158,13 +165,24 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-white dark:bg-[#0f1422] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-2xl shadow-black/40 overflow-hidden flex flex-col max-h-[90vh]">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="groups-modal-title"
+        className="relative w-full max-w-xl bg-white dark:bg-[#0f1422] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-2xl shadow-black/40 overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Close Button */}
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          aria-label="Fechar grupos"
+          className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
         >
           <X className="w-5 h-5" />
         </button>
@@ -175,10 +193,10 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+            <h2 id="groups-modal-title" className="text-xl font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
               Grupos Compartilhados
               <Sparkles className="w-4 h-4 text-amber-500" />
-            </h3>
+            </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Colabore em tarefas, projetos e metas em equipe em tempo real
             </p>
@@ -191,9 +209,9 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
             <div className="w-16 h-16 rounded-3xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-4">
               <Users className="w-8 h-8" />
             </div>
-            <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
               Conecte sua conta para usar Grupos
-            </h4>
+            </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
               Para criar grupos compartilhados e convidar amigos ou equipe com código de acesso, faça login na sua conta da nuvem.
             </p>
@@ -203,7 +221,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                 onClose();
                 onOpenAuth();
               }}
-              className="mt-6 py-2.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs shadow-md shadow-indigo-500/25 transition-all hover:scale-105"
+              className="mt-6 py-2.5 px-6 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs shadow-md shadow-indigo-500/25 transition-all hover:scale-105 min-h-[40px]"
             >
               Entrar ou Criar Conta
             </button>
@@ -212,14 +230,20 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
           /* Logged In Content */
           <>
             {/* Tabs */}
-            <div className="flex items-center gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-900/80 rounded-2xl mb-6">
+            <div 
+              role="tablist" 
+              aria-label="Navegação de grupos"
+              className="flex items-center gap-1.5 p-1 bg-zinc-100 dark:bg-zinc-900/80 rounded-2xl mb-6"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'list' && !selectedGroupDetails}
                 onClick={() => {
                   setActiveTab('list');
                   setSelectedGroupDetails(null);
                 }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all min-h-[38px] ${
                   activeTab === 'list' && !selectedGroupDetails
                     ? 'bg-white dark:bg-[#151c2e] text-zinc-900 dark:text-zinc-100 shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -229,11 +253,13 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'create'}
                 onClick={() => {
                   setActiveTab('create');
                   setSelectedGroupDetails(null);
                 }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 min-h-[38px] ${
                   activeTab === 'create'
                     ? 'bg-white dark:bg-[#151c2e] text-zinc-900 dark:text-zinc-100 shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -244,11 +270,13 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'join'}
                 onClick={() => {
                   setActiveTab('join');
                   setSelectedGroupDetails(null);
                 }}
-                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1.5 min-h-[38px] ${
                   activeTab === 'join'
                     ? 'bg-white dark:bg-[#151c2e] text-zinc-900 dark:text-zinc-100 shadow-sm'
                     : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -266,7 +294,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedGroupDetails(null)}
-                    className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                    className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 min-h-[36px]"
                   >
                     ← Voltar para lista de grupos
                   </button>
@@ -281,9 +309,9 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                           {selectedGroupDetails.name.substring(0, 2).toUpperCase()}
                         </div>
                         <div>
-                          <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                          <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
                             {selectedGroupDetails.name}
-                          </h4>
+                          </h3>
                           {selectedGroupDetails.description && (
                             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                               {selectedGroupDetails.description}
@@ -314,59 +342,77 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleCopyCode(selectedGroupDetails.inviteCode)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                        aria-label="Copiar código de convite"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors min-h-[36px]"
                       >
                         {copiedCode === selectedGroupDetails.inviteCode ? (
                           <>
                             <Check className="w-3.5 h-3.5 text-emerald-500" />
-                            <span className="text-emerald-500">Copiado!</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">Copiado!</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-3.5 h-3.5" />
-                            <span>Copiar Convite</span>
+                            <span>Copiar</span>
                           </>
                         )}
                       </button>
                     </div>
+
+                    {/* Switch to this group button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelectGroup(selectedGroupDetails.id);
+                        onClose();
+                      }}
+                      className="w-full mt-4 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all min-h-[40px]"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      <span>Abrir Espaço Deste Grupo</span>
+                    </button>
                   </div>
 
                   {/* Members List */}
                   <div>
-                    <h5 className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-indigo-500" />
+                    <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-2">
                       Membros do Grupo ({members.length})
-                    </h5>
-
+                    </h4>
                     {loadingMembers ? (
-                      <div className="py-6 flex items-center justify-center text-zinc-400">
-                        <Loader2 className="w-5 h-5 animate-spin" />
+                      <div className="py-4 flex items-center justify-center text-zinc-400 text-xs gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                        <span>Carregando membros...</span>
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
                         {members.map((m) => (
                           <div
                             key={m.id}
-                            className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/60 dark:border-zinc-800/60 flex items-center justify-between"
+                            className="p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-200/70 dark:border-zinc-800/70 flex items-center justify-between text-xs"
                           >
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-xs font-bold">
-                                {m.profile?.displayName?.substring(0, 1).toUpperCase() || 'M'}
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-[11px] shrink-0">
+                                {(m.displayName || m.email || 'M').substring(0, 1).toUpperCase()}
                               </div>
-                              <div>
-                                <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 block">
-                                  {m.profile?.displayName || 'Usuário'}
+                              <div className="min-w-0">
+                                <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate block">
+                                  {m.displayName || m.email}
                                 </span>
-                                <span className="text-[11px] text-zinc-400">
-                                  {m.profile?.email}
-                                </span>
+                                {m.displayName && (
+                                  <span className="text-[10px] text-zinc-400 truncate block">
+                                    {m.email}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
-                            {m.role === 'owner' && (
-                              <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                                <Crown className="w-3 h-3" />
-                                Líder
+                            {m.role === 'owner' ? (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">
+                                <Crown className="w-3 h-3" /> Dono
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full shrink-0">
+                                Membro
                               </span>
                             )}
                           </div>
@@ -375,35 +421,23 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                     )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex items-center gap-3 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelectGroup(selectedGroupDetails.id);
-                        onClose();
-                      }}
-                      className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all"
-                    >
-                      <span>Abrir Tarefas deste Grupo</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </button>
-
+                  {/* Danger Zone: Leave or Delete Group */}
+                  <div className="pt-2">
                     <button
                       type="button"
                       disabled={actionLoading}
                       onClick={() => handleLeaveOrDelete(selectedGroupDetails)}
-                      className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-zinc-800 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 text-zinc-600 dark:text-zinc-400 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                      className="w-full py-2.5 px-4 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-950/40 font-semibold text-xs flex items-center justify-center gap-2 transition-colors min-h-[40px]"
                     >
                       {selectedGroupDetails.role === 'owner' ? (
                         <>
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Excluir</span>
+                          <Trash2 className="w-4 h-4" />
+                          <span>Excluir Grupo e Apagar Tarefas</span>
                         </>
                       ) : (
                         <>
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Sair</span>
+                          <LogOut className="w-4 h-4" />
+                          <span>Sair do Grupo</span>
                         </>
                       )}
                     </button>
@@ -412,13 +446,16 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
               ) : activeTab === 'list' ? (
                 /* Groups List */
                 <div className="space-y-3">
-                  {/* Option for Personal Tasks */}
-                  <div
+                  {/* Semantic Button for Personal Tasks (substitui a div clicável) */}
+                  <button
+                    type="button"
                     onClick={() => {
                       onSelectGroup(null);
                       onClose();
                     }}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                    aria-label="Abrir Minhas Tarefas (Espaço Pessoal)"
+                    aria-pressed={currentGroupId === null}
+                    className={`w-full text-left p-3.5 rounded-2xl border transition-all flex items-center justify-between min-h-[44px] ${
                       currentGroupId === null
                         ? 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-500/40 shadow-sm'
                         : 'bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200/80 dark:border-zinc-800/80 hover:border-indigo-500/30 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
@@ -429,9 +466,9 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                         <FolderOpen className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                        <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
                           Minhas Tarefas (Pessoal)
-                        </h4>
+                        </h3>
                         <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                           Seu espaço privado individual
                         </p>
@@ -443,7 +480,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                         Ativo
                       </span>
                     )}
-                  </div>
+                  </button>
 
                   {groups.length === 0 ? (
                     <div className="py-8 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
@@ -453,7 +490,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setActiveTab('create')}
-                        className="mt-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        className="mt-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline min-h-[36px]"
                       >
                         + Criar seu primeiro grupo
                       </button>
@@ -470,12 +507,16 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                               : 'bg-zinc-50 dark:bg-zinc-900/50 border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700'
                           }`}
                         >
-                          <div
-                            className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                          {/* Semantic Button for Selecting Group (substitui a div clicável) */}
+                          <button
+                            type="button"
                             onClick={() => {
                               onSelectGroup(group.id);
                               onClose();
                             }}
+                            aria-label={`Abrir grupo: ${group.name}`}
+                            aria-pressed={isCurrent}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left min-h-[40px]"
                           >
                             <div
                               className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-xs shadow-md shrink-0"
@@ -484,14 +525,14 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                               {group.name.substring(0, 2).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                              <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
                                 {group.name}
-                              </h4>
+                              </h3>
                               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
                                 {group.description || `Código: ${group.inviteCode}`}
                               </p>
                             </div>
-                          </div>
+                          </button>
 
                           <div className="flex items-center gap-2 shrink-0">
                             {isCurrent && (
@@ -501,8 +542,9 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                             )}
                             <button
                               type="button"
-                              onClick={() => setSelectedGroupDetails(group)}
-                              className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                              onClick={() => handleOpenGroupDetails(group)}
+                              aria-label={`Gerenciar membros do grupo ${group.name}`}
+                              className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center"
                               title="Gerenciar membros e convite"
                             >
                               <Users className="w-4 h-4" />
@@ -517,10 +559,11 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                 /* Create Group Form */
                 <form onSubmit={handleCreateSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
+                    <label htmlFor="group-create-name" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
                       Nome do Grupo *
                     </label>
                     <input
+                      id="group-create-name"
                       type="text"
                       required
                       placeholder="Ex: Projeto App, Trabalho, Estudos..."
@@ -531,10 +574,11 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
+                    <label htmlFor="group-create-desc" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
                       Descrição (Opcional)
                     </label>
                     <input
+                      id="group-create-desc"
                       type="text"
                       placeholder="Objetivo ou informações para os membros"
                       value={description}
@@ -544,16 +588,22 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">
+                    <label id="group-color-picker-label" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">
                       Cor de Identificação
                     </label>
-                    <div className="flex items-center gap-2">
+                    <div 
+                      role="group"
+                      aria-labelledby="group-color-picker-label"
+                      className="flex items-center gap-2"
+                    >
                       {GROUP_COLORS.map((c) => (
                         <button
                           key={c.value}
                           type="button"
                           onClick={() => setColor(c.value)}
-                          className={`w-7 h-7 rounded-full transition-transform ${
+                          aria-label={`Cor ${c.name}`}
+                          aria-pressed={color === c.value}
+                          className={`w-7 h-7 rounded-full transition-transform min-h-[36px] min-w-[36px] flex items-center justify-center ${
                             color === c.value
                               ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-[#0f1422] scale-110'
                               : 'opacity-70 hover:opacity-100'
@@ -566,7 +616,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   </div>
 
                   {createError && (
-                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400">
+                    <div role="alert" aria-live="assertive" className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400">
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       <span>{createError}</span>
                     </div>
@@ -575,7 +625,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   <button
                     type="submit"
                     disabled={isCreating}
-                    className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                    className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-60 min-h-[44px]"
                   >
                     {isCreating ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -589,12 +639,13 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                 /* Join Group Form */
                 <form onSubmit={handleJoinSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
+                    <label htmlFor="group-invite-code-input" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
                       Código de Convite do Grupo
                     </label>
                     <div className="relative">
                       <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                       <input
+                        id="group-invite-code-input"
                         type="text"
                         required
                         placeholder="Ex: TODO-7K9P"
@@ -610,6 +661,8 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
 
                   {joinResult && (
                     <div
+                      role="alert"
+                      aria-live="assertive"
                       className={`p-3 rounded-xl border flex items-center gap-2 text-xs ${
                         joinResult.success
                           ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400'
@@ -628,7 +681,7 @@ export const GroupsModal: React.FC<GroupsModalProps> = ({
                   <button
                     type="submit"
                     disabled={isJoining}
-                    className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                    className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-60 min-h-[44px]"
                   >
                     {isJoining ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

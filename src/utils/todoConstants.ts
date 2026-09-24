@@ -160,3 +160,21 @@ export const INITIAL_TODOS = [
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
   },
 ];
+
+export interface AvatarPreset {
+  id: string;
+  emoji: string;
+  label: string;
+  bg: string;
+}
+
+export const AVATAR_PRESETS: AvatarPreset[] = [
+  { id: 'rocket', emoji: '🚀', label: 'Explorador', bg: 'from-blue-600 to-indigo-600' },
+  { id: 'zap', emoji: '⚡', label: 'Ágil', bg: 'from-amber-500 to-orange-600' },
+  { id: 'wizard', emoji: '🧙‍♂️', label: 'Foco Supremo', bg: 'from-purple-600 to-violet-700' },
+  { id: 'owl', emoji: '🦉', label: 'Sábio', bg: 'from-emerald-600 to-teal-700' },
+  { id: 'robot', emoji: '🤖', label: 'Produtivo', bg: 'from-cyan-600 to-blue-700' },
+  { id: 'lion', emoji: '🦁', label: 'Líder', bg: 'from-yellow-500 to-amber-600' },
+  { id: 'target', emoji: '🎯', label: 'Focado', bg: 'from-rose-600 to-red-600' },
+  { id: 'star', emoji: '✨', label: 'Criativo', bg: 'from-fuchsia-600 to-pink-600' },
+];

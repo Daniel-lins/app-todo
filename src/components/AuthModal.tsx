@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   X, 
   Mail, 
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '../utils/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -36,6 +37,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const emailInputRef = useRef<HTMLInputElement>(null);
+
+  // Hook de acessibilidade: contenção de foco, foco inicial e devolução de foco
+  const { modalRef } = useAccessibleModal({
+    isOpen,
+    onClose,
+    initialFocusRef: emailInputRef,
+  });
+
   if (!isOpen) return null;
 
   const supabase = createClient();
@@ -48,8 +58,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       if (authMode === 'forgot') {
-        const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        const redirectUrl =
+          typeof window !== 'undefined'
+            ? `${window.location.origin}/auth/callback?next=/auth/reset-password`
+            : undefined;
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: redirectUrl,
         });
         if (error) throw error;
@@ -106,21 +119,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await supabase.auth.signOut();
       onAuthSuccess();
       onClose();
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Erro ao sair.');
+    } catch {
+      setErrorMsg('Falha ao desconectar.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-[#0f1422] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-2xl shadow-black/40">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div 
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        className="relative w-full max-w-md bg-white dark:bg-[#0f1422] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 shadow-2xl shadow-black/40 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Close Button */}
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          aria-label="Fechar modal de autenticação"
+          className="absolute top-5 right-5 p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
         >
           <X className="w-5 h-5" />
         </button>
@@ -132,9 +156,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <User className="w-8 h-8" />
             </div>
 
-            <h3 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
+            <h2 id="auth-modal-title" className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
               Conta Conectada
-            </h3>
+            </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-xs break-all">
               {user.email}
             </p>
@@ -146,7 +170,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Sincronização em Nuvem Ativa
                 </p>
                 <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 mt-0.5">
-                  Suas tarefas e pomodoros estão seguros e sincronizados com o Supabase PostgreSQL.
+                  Suas tarefas e ciclos de foco estão seguros e sincronizados com a sua conta na nuvem.
                 </p>
               </div>
             </div>
@@ -155,7 +179,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               type="button"
               onClick={handleSignOut}
               disabled={loading}
-              className="mt-6 w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-zinc-800 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 text-zinc-700 dark:text-zinc-300 font-semibold text-sm transition-colors"
+              className="mt-6 w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-zinc-800 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 text-zinc-700 dark:text-zinc-300 font-semibold text-sm transition-colors min-h-[44px]"
             >
               {loading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -173,14 +197,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <Cloud className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <h2 id="auth-modal-title" className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                   {authMode === 'forgot'
                     ? 'Recuperar Senha'
                     : authMode === 'signup'
                     ? 'Criar Conta na Nuvem'
                     : 'Entrar na Nuvem'}
                   <Sparkles className="w-4 h-4 text-amber-500" />
-                </h3>
+                </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   {authMode === 'forgot'
                     ? 'Enviaremos um link para você redefinir sua senha'
@@ -193,13 +217,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             {/* Error and Success Alerts */}
             {errorMsg && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-center gap-2.5 text-xs text-rose-600 dark:text-rose-400">
+              <div role="alert" aria-live="assertive" className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 flex items-center gap-2.5 text-xs text-rose-600 dark:text-rose-400">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}
             {successMsg && (
-              <div className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-2.5 text-xs text-emerald-600 dark:text-emerald-400">
+              <div role="status" aria-live="polite" className="mb-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 flex items-center gap-2.5 text-xs text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>{successMsg}</span>
               </div>
@@ -207,12 +231,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
+                <label htmlFor="auth-email-input" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-1.5">
                   E-mail
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                   <input
+                    id="auth-email-input"
+                    ref={emailInputRef}
                     type="email"
                     required
                     placeholder="seu@email.com"
@@ -226,7 +252,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {authMode !== 'forgot' && (
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                    <label htmlFor="auth-password-input" className="block text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                       Senha (mínimo 6 caracteres)
                     </label>
                     {authMode === 'login' && (
@@ -237,7 +263,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           setErrorMsg(null);
                           setSuccessMsg(null);
                         }}
-                        className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline min-h-[30px]"
                       >
                         Esqueci a senha
                       </button>
@@ -246,6 +272,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
+                      id="auth-password-input"
                       type="password"
                       required
                       minLength={6}
@@ -261,7 +288,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 min-h-[44px]"
               >
                 {loading ? (
                   <>
@@ -291,7 +318,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline min-h-[30px]"
                   >
                     Voltar ao Login
                   </button>
@@ -306,7 +333,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline min-h-[30px]"
                   >
                     Fazer Login
                   </button>
@@ -321,7 +348,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       setErrorMsg(null);
                       setSuccessMsg(null);
                     }}
-                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+                    className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline min-h-[30px]"
                   >
                     Criar Gratuitamente
                   </button>

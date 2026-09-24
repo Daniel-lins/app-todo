@@ -1,5 +1,9 @@
 export const triggerConfetti = async () => {
   if (typeof window === 'undefined') return;
+  // Respeito a usuários com preferência de movimento reduzido
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
   try {
     const confetti = (await import('canvas-confetti')).default;
     confetti({

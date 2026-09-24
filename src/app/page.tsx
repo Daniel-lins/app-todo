@@ -1,46 +1,72 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { 
   CheckSquare2, 
   ListTodo, 
   Plus, 
-  Sparkles, 
-  Layers, 
-  Pin, 
-  Inbox, 
-  FilterX,
-  Bell,
-  BellRing,
-  Cloud,
-  Loader2,
-  Users as UsersIcon,
-  User as UserIcon
+  Search, 
+  SlidersHorizontal, 
+  X, 
+  Loader2, 
+  ChevronDown, 
+  ChevronRight, 
+  Kanban as KanbanIcon, 
+  RotateCcw
 } from 'lucide-react';
 import { useTodos } from '../hooks/useTodos';
-import { TodoItem } from '../types/todo';
-import { StatsBar } from '../components/StatsBar';
-import { FilterBar } from '../components/FilterBar';
+import { usePomodoro } from '../hooks/usePomodoro';
+import { TodoItem, Category, Priority, SortOption } from '../types/todo';
+import { Sidebar } from '../components/Sidebar';
 import { TaskCard } from '../components/TaskCard';
 import { TaskModal } from '../components/TaskModal';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { KanbanBoard } from '../components/KanbanBoard';
 import { PomodoroModal } from '../components/PomodoroModal';
-import { BackupModal } from '../components/BackupModal';
-import { ShortcutsModal } from '../components/ShortcutsModal';
+import { PomodoroWidget } from '../components/PomodoroWidget';
+import { MobileNav, MobileTab } from '../components/MobileNav';
+import { SettingsModal } from '../components/SettingsModal';
 import { AuthModal } from '../components/AuthModal';
-import { ProfileModal, AVATAR_PRESETS } from '../components/ProfileModal';
-import { GroupsModal } from '../components/GroupsModal';
-import { createClient } from '../utils/supabase/client';
+import type { ConfirmModalProps } from '../components/ConfirmModal';
+import { AVATAR_PRESETS, CATEGORIES, PRIORITIES } from '../utils/todoConstants';
+import { isTodayLocal } from '../utils/dateUtils';
+import { 
+  checkDeadlinesAndNotify,
+  getNotificationStatus,
+  NotificationStatus
+} from '../utils/notificationService';
+
+// Modais secundários carregados sob demanda
+const NotificationModal = dynamic(
+  () => import('../components/NotificationModal').then((m) => m.NotificationModal),
+  { ssr: false }
+);
+const BackupModal = dynamic(
+  () => import('../components/BackupModal').then((m) => m.BackupModal),
+  { ssr: false }
+);
+const ShortcutsModal = dynamic(
+  () => import('../components/ShortcutsModal').then((m) => m.ShortcutsModal),
+  { ssr: false }
+);
+const ProfileModal = dynamic(
+  () => import('../components/ProfileModal').then((m) => m.ProfileModal),
+  { ssr: false }
+);
+const GroupsModal = dynamic(
+  () => import('../components/GroupsModal').then((m) => m.GroupsModal),
+  { ssr: false }
+);
+const ConfirmModal = dynamic(
+  () => import('../components/ConfirmModal').then((m) => m.ConfirmModal),
+  { ssr: false }
+);
 
 export default function Home() {
   const {
     todos,
     filteredTodos,
-    isLoaded,
     user,
-    isSyncing,
-    refetchCloud,
     stats,
     viewMode,
     setViewMode,
@@ -62,8 +88,6 @@ export default function Home() {
     toggleSubTask,
     addSubTask,
     deleteSubTask,
-    clearCompleted,
-    resetToDemo,
     moveTaskStatus,
     incrementPomodoro,
     importTodos,
@@ -77,55 +101,120 @@ export default function Home() {
     leaveGroup,
     deleteGroup,
     fetchGroupMembers,
+    signOut,
+    undoDeleteTodo,
+    syncStatus,
+    pendingSyncCount,
+    retrySync,
   } = useTodos();
 
-  // Modals state
+  // Estados dos Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TodoItem | null>(null);
+  const [quickTitle, setQuickTitle] = useState('');
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isCompletedSectionOpen, setIsCompletedSectionOpen] = useState(true);
 
-  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
-  const [activePomodoroTask, setActivePomodoroTask] = useState<TodoItem | null>(null);
-
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isGroupsOpen, setIsGroupsOpen] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>(() =>
+    typeof window !== 'undefined' ? getNotificationStatus() : 'default'
+  );
 
-  // Check notification permission on mount
+  // Tab mobile ativa
+  const [mobileTab, setMobileTab] = useState<MobileTab>('today');
+
+  // Pomodoro timer desacoplado
+  const pomodoro = usePomodoro({
+    todos,
+    onSessionComplete: incrementPomodoro,
+  });
+
+  // Modal de confirmação para ações destrutivas
+  const [confirmConfig, setConfirmConfig] = useState<Omit<ConfirmModalProps, 'onClose'> | null>(null);
+
+  // Toast de desfazer exclusão
+  const [undoToast, setUndoToast] = useState<{ title: string } | null>(null);
+
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotificationPermission(Notification.permission);
+    if (!undoToast) return;
+    const timer = setTimeout(() => {
+      setUndoToast(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [undoToast]);
+
+  // Verificação periódica de prazos
+  useEffect(() => {
+    checkDeadlinesAndNotify(todos);
+    const interval = setInterval(() => {
+      checkDeadlinesAndNotify(todos);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [todos]);
+
+  // Formatação de data em português: "Quinta-feira, 24 de setembro"
+  const formattedToday = useMemo(() => {
+    try {
+      const now = new Date();
+      const str = new Intl.DateTimeFormat('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      }).format(now);
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    } catch {
+      return 'Hoje';
     }
   }, []);
-
-  const handleRequestNotifications = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      alert('Seu navegador não suporta notificações web.');
-      return;
-    }
-    try {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      if (permission === 'granted') {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const pendingToday = todos.filter((t) => !t.completed && t.dueDate === todayStr).length;
-        new Notification('AppToDo - Notificações Ativadas! 🔔', {
-          body: pendingToday > 0 
-            ? `Você tem ${pendingToday} tarefa(s) agendada(s) para hoje!` 
-            : 'Tudo pronto! Você receberá avisos sobre seus prazos e foco.',
-          icon: '/favicon.ico',
-        });
-      }
-    } catch {
-      // ignore
-    }
-  };
 
   const handleOpenCreate = () => {
     setEditingTask(null);
     setIsModalOpen(true);
+  };
+
+  const handleOpenCreateWithPrefill = (prefillTitle?: string) => {
+    if (prefillTitle && prefillTitle.trim()) {
+      setEditingTask({
+        id: '',
+        title: prefillTitle.trim(),
+        completed: false,
+        pinned: false,
+        status: 'todo',
+        priority: 'medium',
+        category: 'other',
+        subTasks: [],
+        createdAt: '',
+      });
+    } else {
+      setEditingTask(null);
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleQuickCaptureSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTitle.trim()) return;
+    try {
+      await addTodo({
+        title: quickTitle.trim(),
+        pinned: false,
+        status: 'todo',
+        priority: 'medium',
+        category: 'other',
+        subTasks: [],
+        groupId: currentGroupId || undefined,
+        dueDate: filterStatus === 'today' ? new Date().toISOString().split('T')[0] : undefined,
+      });
+      setQuickTitle('');
+    } catch (err) {
+      console.error('Falha ao adicionar tarefa rápida:', err);
+    }
   };
 
   const handleOpenEdit = (task: TodoItem) => {
@@ -134,43 +223,66 @@ export default function Home() {
   };
 
   const handleStartPomodoro = (task: TodoItem) => {
-    setActivePomodoroTask(task);
-    setIsPomodoroOpen(true);
+    pomodoro.bindTask(task);
+    pomodoro.openModal();
   };
 
-  const handleModalSubmit = (data: Omit<TodoItem, 'id' | 'createdAt' | 'completed'>) => {
-    if (editingTask) {
-      updateTodo(editingTask.id, data);
+  const handleModalSubmit = async (data: Omit<TodoItem, 'id' | 'createdAt' | 'completed'>) => {
+    if (editingTask && editingTask.id) {
+      await updateTodo(editingTask.id, data);
     } else {
-      addTodo(data);
+      await addTodo(data);
+      setQuickTitle('');
     }
   };
 
-  // Keyboard shortcuts listener
+  const { isModalOpen: isPomodoroModalOpen, closeModal: closePomodoroModal } = pomodoro;
+
+  // Atalhos de teclado com proteção
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
-      const isInput = activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
+      const isInput =
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        activeTag === 'select' ||
+        (document.activeElement as HTMLElement)?.isContentEditable;
 
-      // Escape closes any open modal
+      const isAnyModalOpen =
+        isModalOpen ||
+        isPomodoroModalOpen ||
+        isBackupOpen ||
+        isShortcutsOpen ||
+        isAuthOpen ||
+        isNotificationModalOpen ||
+        isProfileOpen ||
+        isGroupsOpen ||
+        isSettingsOpen;
+
       if (e.key === 'Escape') {
-        setIsModalOpen(false);
-        setIsPomodoroOpen(false);
-        setIsBackupOpen(false);
-        setIsShortcutsOpen(false);
-        setIsAuthOpen(false);
+        if (isAnyModalOpen) {
+          e.preventDefault();
+          setIsModalOpen(false);
+          closePomodoroModal();
+          setIsBackupOpen(false);
+          setIsShortcutsOpen(false);
+          setIsAuthOpen(false);
+          setIsNotificationModalOpen(false);
+          setIsProfileOpen(false);
+          setIsGroupsOpen(false);
+          setIsSettingsOpen(false);
+        }
         return;
       }
 
-      // Ignore other shortcuts when typing in inputs
-      if (isInput) return;
+      if (isInput || isAnyModalOpen) return;
 
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         handleOpenCreate();
       } else if (e.key === '/') {
         e.preventDefault();
-        const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement;
+        const searchInput = document.querySelector('input[data-search-input]') as HTMLInputElement;
         if (searchInput) {
           searchInput.focus();
           searchInput.select();
@@ -186,400 +298,645 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, setViewMode]);
+  }, [
+    viewMode,
+    setViewMode,
+    isModalOpen,
+    isPomodoroModalOpen,
+    closePomodoroModal,
+    isBackupOpen,
+    isShortcutsOpen,
+    isAuthOpen,
+    isNotificationModalOpen,
+    isProfileOpen,
+    isGroupsOpen,
+    isSettingsOpen,
+  ]);
 
-  // Split tasks into pinned and unpinned if in 'all' view
-  const pinnedTasks = filteredTodos.filter((t) => t.pinned && !t.completed);
-  const regularTasks = filteredTodos.filter((t) => !t.pinned || t.completed);
-
-  const avatarPreset = AVATAR_PRESETS.find((a) => a.id === profile?.avatarUrl) || AVATAR_PRESETS[0];
   const activeGroup = groups.find((g) => g.id === currentGroupId) || null;
+  const currentSpaceName = activeGroup
+    ? `Grupo: ${activeGroup.name}`
+    : user
+    ? 'Espaço Pessoal'
+    : 'Modo Visitante';
+  const avatarPreset = AVATAR_PRESETS.find((a) => a.id === profile?.avatarUrl) || AVATAR_PRESETS[0];
+
+  // Identificação do título da visualização atual
+  const viewTitle = useMemo(() => {
+    if (activeGroup) return activeGroup.name;
+    switch (filterStatus) {
+      case 'today':
+        return 'Hoje';
+      case 'all':
+        return 'Todas as tarefas';
+      case 'pinned':
+        return 'Fixadas';
+      case 'completed':
+        return 'Concluídas';
+      default:
+        return 'Minhas tarefas';
+    }
+  }, [activeGroup, filterStatus]);
+
+  // Separação entre tarefas ativas (próximas) e tarefas concluídas para a lista
+  const activeTasks = useMemo(() => {
+    return filteredTodos.filter((t) => !t.completed);
+  }, [filteredTodos]);
+
+  const completedTasks = useMemo(() => {
+    return filteredTodos.filter((t) => t.completed);
+  }, [filteredTodos]);
+
+  const handleDeleteTask = async (id: string) => {
+    const taskToDelete = todos.find((t) => t.id === id);
+    await deleteTodo(id);
+    if (taskToDelete) {
+      setUndoToast({ title: taskToDelete.title });
+    }
+  };
+
+  const handleUndo = async () => {
+    await undoDeleteTodo();
+    setUndoToast(null);
+  };
+
+  const handleMobileTabSelect = (tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === 'today') {
+      setCurrentGroupId(null);
+      setFilterStatus('today');
+    } else if (tab === 'all') {
+      setCurrentGroupId(null);
+      setFilterStatus('all');
+    }
+  };
+
+  const todayTasksCount = useMemo(() => {
+    return todos.filter((t) => !t.completed && isTodayLocal(t.dueDate)).length;
+  }, [todos]);
+
+  // Contagem para o espaço e período exibidos
+  const displayedTotal = stats.total;
+  const displayedCompleted = stats.completed;
+  const progressPercent = stats.rate;
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-b from-zinc-50 via-white to-zinc-100 dark:from-[#090d16] dark:via-[#0c111d] dark:to-[#090d16] text-zinc-900 dark:text-zinc-100 flex flex-col">
-      {/* Subtle background ambient glows */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/5 blur-3xl rounded-full" />
-        <div className="absolute top-1/2 -right-40 w-[450px] h-[450px] bg-blue-500/5 blur-3xl rounded-full" />
-      </div>
+    <div className="min-h-screen bg-[#fbfbfb] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col md:flex-row antialiased selection:bg-[#ede9fe] selection:text-[#5b4fe9]">
+      {/* 1. Sidebar à esquerda no Desktop */}
+      <Sidebar
+        filterStatus={filterStatus}
+        onSelectFilter={(status) => {
+          setFilterStatus(status);
+        }}
+        groups={groups}
+        currentGroupId={currentGroupId}
+        onSelectGroup={(groupId) => {
+          setCurrentGroupId(groupId);
+        }}
+        onOpenCreateGroup={() => setIsGroupsOpen(true)}
+        todayCount={todayTasksCount}
+        profile={profile}
+        isLoggedIn={!!user}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+      />
 
-      <div className="relative z-10 flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col gap-8">
-        {/* Header Bar */}
-        <header className="flex items-center justify-between gap-4 pb-2 border-b border-zinc-200/60 dark:border-zinc-800/60">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-              <CheckSquare2 className="w-6 h-6 stroke-[2.5]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-black tracking-tight bg-gradient-to-r from-zinc-900 via-indigo-950 to-zinc-700 dark:from-white dark:via-zinc-200 dark:to-zinc-400 bg-clip-text text-transparent">
-                  AppToDo
-                </h1>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                  <Sparkles className="w-3 h-3" /> v1.2
-                </span>
-              </div>
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
-                Organize seu dia, acompanhe metas e alcance resultados
-              </p>
-            </div>
+      {/* 2. Área Principal à direita */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-32 md:pb-24">
+        {/* Cabeçalho superior compacto (Desktop) */}
+        <header className="hidden md:flex items-center justify-between px-8 py-3.5 border-b border-zinc-200/80 dark:border-zinc-800 bg-[#fbfbfb]/80 dark:bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-10">
+          {/* Breadcrumb: < Meu espaço / Hoje */}
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="text-zinc-400 dark:text-zinc-500 font-normal">&lsaquo;</span>
+            <button 
+              type="button" 
+              onClick={() => {
+                setCurrentGroupId(null);
+                setFilterStatus('all');
+              }}
+              className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+            >
+              {activeGroup ? activeGroup.name : 'Meu espaço'}
+            </button>
+            <span className="text-zinc-300 dark:text-zinc-600">/</span>
+            <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+              {viewTitle}
+            </span>
           </div>
 
-          {/* Right utility buttons */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* Notification alert toggle */}
-            <button
-              type="button"
-              onClick={handleRequestNotifications}
-              title={
-                notificationPermission === 'granted'
-                  ? 'Notificações ativadas'
-                  : 'Ativar notificações de prazos'
-              }
-              className={`p-2.5 rounded-xl border transition-colors ${
-                notificationPermission === 'granted'
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {notificationPermission === 'granted' ? (
-                <BellRing className="w-4 h-4" />
-              ) : (
-                <Bell className="w-4 h-4" />
+          {/* Lado direito do cabeçalho: Busca + Sincronização + Avatar */}
+          <div className="flex items-center gap-4">
+            {/* Campo de Busca funcional */}
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 text-zinc-400 pointer-events-none" />
+              <input
+                data-search-input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar"
+                aria-label="Buscar tarefas"
+                className="w-44 lg:w-56 pl-8 pr-3 py-1.5 text-xs rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9] focus:border-[#5b4fe9] transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Limpar busca"
+                  className="absolute right-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
-            </button>
+            </div>
 
-            {/* Groups Switcher Button */}
-            <button
-              type="button"
-              onClick={() => setIsGroupsOpen(true)}
-              title={activeGroup ? `Grupo: ${activeGroup.name}` : 'Grupos Compartilhados'}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
-                activeGroup
-                  ? 'border-indigo-500/40 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
-                  : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-indigo-500/30 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {activeGroup ? (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: activeGroup.color }} />
-                  <span className="max-w-[90px] sm:max-w-[120px] truncate">{activeGroup.name}</span>
-                </>
-              ) : (
-                <>
-                  <UsersIcon className="w-4 h-4 text-indigo-500" />
-                  <span className="hidden sm:inline">Grupos</span>
-                  {groups.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold">
-                      {groups.length}
-                    </span>
-                  )}
-                </>
-              )}
-            </button>
-
-            {/* User Profile / Auth Button */}
-            {user ? (
-              <button
-                type="button"
-                onClick={() => setIsProfileOpen(true)}
-                title="Meu Perfil & Desempenho"
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500/40 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all text-xs font-semibold text-zinc-800 dark:text-zinc-200"
-              >
-                <div className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${avatarPreset.bg} flex items-center justify-center text-xs shadow-sm`}>
-                  {avatarPreset.emoji}
-                </div>
-                <span className="max-w-[90px] truncate hidden sm:inline">
-                  {profile?.displayName || user.email?.split('@')[0] || 'Perfil'}
+            {/* Estado Real de Sincronização */}
+            <div className="flex items-center gap-1.5 text-xs">
+              {!user ? (
+                <span 
+                  className="inline-flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400"
+                  title="Modo local. Conectar à sua conta na nuvem para sincronizar entre aparelhos."
+                >
+                  <span className="w-2 h-2 rounded-full bg-zinc-400" />
+                  <span>Salvo localmente</span>
                 </span>
-                {isSyncing && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthOpen(true)}
-                title="Conectar à Nuvem Supabase"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all text-xs font-semibold"
-              >
-                <Cloud className="w-4 h-4 text-indigo-500" />
-                <span className="hidden sm:inline">Entrar</span>
-              </button>
-            )}
+              ) : syncStatus === 'syncing' ? (
+                <span className="inline-flex items-center gap-1.5 text-[#5b4fe9]">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Sincronizando...</span>
+                </span>
+              ) : syncStatus === 'synced' && pendingSyncCount === 0 ? (
+                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>Sincronizado</span>
+                </span>
+              ) : syncStatus === 'local_only' || pendingSyncCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  <span>Salvo localmente ({pendingSyncCount})</span>
+                </span>
+              ) : syncStatus === 'error' ? (
+                <button
+                  type="button"
+                  onClick={() => retrySync()}
+                  title="Não foi possível salvar alterações na nuvem. Clique para tentar novamente."
+                  className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400 font-semibold hover:underline"
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                  <span>Erro ao sincronizar</span>
+                </button>
+              ) : null}
+            </div>
 
-            <ThemeToggle />
-
+            {/* Avatar / Acesso à conta */}
             <button
               type="button"
-              onClick={handleOpenCreate}
-              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs shadow-md shadow-indigo-500/25 transition-all hover:scale-105 active:scale-95"
+              onClick={() => {
+                if (user) {
+                  setIsProfileOpen(true);
+                } else {
+                  setIsAuthOpen(true);
+                }
+              }}
+              title={user ? `Perfil de ${profile?.displayName || user.email}` : 'Conectar à sua conta na nuvem'}
+              aria-label={user ? 'Acessar perfil' : 'Entrar na conta'}
+              className="w-8 h-8 rounded-full overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 flex items-center justify-center text-sm shadow-xs hover:ring-2 hover:ring-[#5b4fe9] transition-all focus:outline-none focus:ring-2 focus:ring-[#5b4fe9]"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Criar Tarefa</span>
+              {avatarPreset.emoji}
             </button>
           </div>
         </header>
 
-        {/* Active Collaborative Group Banner */}
-        {activeGroup && (
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/50">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: activeGroup.color }} />
-              <div>
-                <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 block">
-                  Grupo Compartilhado: {activeGroup.name}
-                </span>
-                <span className="text-[11px] text-indigo-700/80 dark:text-indigo-400">
-                  {activeGroup.description || 'Tarefas compartilhadas e sincronizadas em tempo real'}
-                </span>
+        {/* Topo Mobile (Adaptado para celular conforme mockup) */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-zinc-200/80 dark:border-zinc-800 bg-white/95 dark:bg-zinc-950/95 sticky top-0 z-20">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-[#ede9fe] dark:bg-[#2b275c] text-[#5b4fe9] dark:text-[#a59bfb] flex items-center justify-center">
+              <CheckSquare2 className="w-4 h-4 stroke-[2.5]" />
+            </div>
+            <span className="font-bold text-base tracking-tight text-zinc-900 dark:text-zinc-100">
+              AppToDo
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Sincronização compacta */}
+            {syncStatus === 'synced' && pendingSyncCount === 0 && user ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500" title="Sincronizado" />
+            ) : syncStatus === 'error' ? (
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" title="Não foi possível salvar alterações na nuvem." />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-amber-500" title="Salvo localmente" />
+            )}
+
+            {/* Avatar mobile */}
+            <button
+              type="button"
+              onClick={() => {
+                if (user) {
+                  setIsProfileOpen(true);
+                } else {
+                  setIsAuthOpen(true);
+                }
+              }}
+              aria-label={user ? 'Abrir perfil' : 'Entrar'}
+              className="w-8 h-8 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-sm"
+            >
+              {avatarPreset.emoji}
+            </button>
+          </div>
+        </header>
+
+        {/* Conteúdo Central */}
+        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 flex flex-col">
+          {/* Título Principal + Data + Botão "+ Nova tarefa" */}
+          <div className="flex items-start justify-between gap-4 mb-3">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
+                {viewTitle}
+              </h1>
+              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-0.5 font-normal">
+                {filterStatus === 'today' ? formattedToday : `${displayedTotal} tarefas`}
+              </p>
+            </div>
+
+            {/* Botão Principal "+ Nova tarefa" */}
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="bg-[#5b4fe9] hover:bg-[#4d40d9] text-white text-xs sm:text-sm font-semibold px-4 py-2 sm:py-2.5 rounded-xl shadow-xs transition-all duration-150 flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#5b4fe9] focus:ring-offset-2 active:scale-98 shrink-0"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Nova tarefa</span>
+            </button>
+          </div>
+
+          {/* Barra de Progresso Compacta: "2 de 5 concluídas" + Barra fina */}
+          <div className="mb-5 sm:mb-6">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+                {displayedCompleted} de {displayedTotal} concluídas
+              </span>
+              <div className="w-36 sm:w-48 h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#5b4fe9] rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
               </div>
             </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsGroupsOpen(true)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 transition-colors"
-              >
-                Código: <span className="font-mono">{activeGroup.inviteCode}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentGroupId(null)}
-                className="text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 underline ml-1"
-              >
-                Voltar para Pessoal
-              </button>
-            </div>
           </div>
-        )}
 
-        {/* Productivity Analytics Overview */}
-        <StatsBar stats={stats} />
-
-        {/* Filters, Search, View Mode and Controls */}
-        <FilterBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          status={filterStatus}
-          onStatusChange={setFilterStatus}
-          category={filterCategory}
-          onCategoryChange={setFilterCategory}
-          priority={filterPriority}
-          onPriorityChange={setFilterPriority}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-          onClearCompleted={clearCompleted}
-          onResetDemo={resetToDemo}
-          onOpenNewTaskModal={handleOpenCreate}
-          completedCount={stats.completed}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onOpenBackupModal={() => setIsBackupOpen(true)}
-          onOpenShortcutsModal={() => setIsShortcutsOpen(true)}
-        />
-
-        {/* Main Workspace Section */}
-        <main className="flex-1 flex flex-col gap-6">
-          {!isLoaded ? (
-            /* Loading state */
-            <div className="py-20 flex flex-col items-center justify-center text-zinc-400">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-sm">Carregando suas tarefas...</p>
+          {/* Ferramentas: Alternância [ Lista | Kanban ] + Botão Filtros */}
+          <div className="flex items-center justify-between gap-3 mb-4">
+            {/* Segmented Control Lista / Kanban */}
+            <div className="inline-flex items-center p-1 rounded-xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  viewMode === 'list'
+                    ? 'bg-white dark:bg-zinc-800 text-[#5b4fe9] dark:text-[#a59bfb] shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <ListTodo className="w-3.5 h-3.5" />
+                <span>Lista</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('kanban')}
+                aria-pressed={viewMode === 'kanban'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                  viewMode === 'kanban'
+                    ? 'bg-white dark:bg-zinc-800 text-[#5b4fe9] dark:text-[#a59bfb] shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <KanbanIcon className="w-3.5 h-3.5" />
+                <span>Kanban</span>
+              </button>
             </div>
-          ) : viewMode === 'kanban' ? (
-            /* Kanban View */
+
+            {/* Botão Filtros */}
+            <button
+              type="button"
+              onClick={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+              aria-expanded={isFilterPanelOpen}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-colors ${
+                isFilterPanelOpen || filterCategory !== 'all' || filterPriority !== 'all'
+                  ? 'border-[#5b4fe9] bg-[#ede9fe]/50 dark:bg-[#5b4fe9]/10 text-[#5b4fe9] dark:text-[#a59bfb]'
+                  : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Filtros</span>
+            </button>
+          </div>
+
+          {/* Painel expansível de Filtros */}
+          {isFilterPanelOpen && (
+            <div className="mb-4 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs animate-in fade-in duration-150 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Categoria */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500 font-medium">Categoria:</span>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value as Category | 'all')}
+                    className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
+                  >
+                    <option value="all">Todas as categorias</option>
+                    {Object.values(CATEGORIES).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Prioridade */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500 font-medium">Prioridade:</span>
+                  <select
+                    value={filterPriority}
+                    onChange={(e) => setFilterPriority(e.target.value as Priority | 'all')}
+                    className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
+                  >
+                    <option value="all">Todas as prioridades</option>
+                    {Object.values(PRIORITIES).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Ordenação */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-zinc-500 font-medium">Ordenar:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
+                  >
+                    <option value="created_desc">Mais recentes</option>
+                    <option value="due_date">Prazo mais próximo</option>
+                    <option value="priority">Prioridade alta</option>
+                    <option value="alphabetical">Alfabética</option>
+                  </select>
+                </div>
+
+                {/* Limpar Filtros */}
+                {(filterCategory !== 'all' || filterPriority !== 'all') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory('all');
+                      setFilterPriority('all');
+                    }}
+                    className="text-xs text-[#5b4fe9] hover:underline font-medium ml-auto"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 5. Linha de Criação Rápida "+ Adicionar uma tarefa..." */}
+          <form
+            onSubmit={handleQuickCaptureSubmit}
+            className="mb-5 relative flex items-center rounded-xl border border-zinc-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-xs hover:border-zinc-300 dark:hover:border-zinc-700 focus-within:border-[#5b4fe9] focus-within:ring-1 focus-within:ring-[#5b4fe9] transition-all"
+          >
+            <div className="pl-3.5 pr-2 text-zinc-400">
+              <Plus className="w-4 h-4" />
+            </div>
+            <input
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="Adicionar uma tarefa..."
+              aria-label="Adicionar uma tarefa rapidamente"
+              className="flex-1 py-3 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none"
+            />
+            {quickTitle.trim() && (
+              <div className="pr-3 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleOpenCreateWithPrefill(quickTitle)}
+                  title="Expandir para formulário completo com detalhes"
+                  className="text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 px-2 py-1 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  Detalhes
+                </button>
+                <button
+                  type="submit"
+                  className="text-xs font-semibold text-white bg-[#5b4fe9] hover:bg-[#4d40d9] px-3 py-1 rounded-lg transition-colors shadow-xs"
+                >
+                  Criar
+                </button>
+              </div>
+            )}
+          </form>
+
+          {/* Conteúdo de Tarefas: Visualização Lista ou Kanban */}
+          {viewMode === 'kanban' ? (
             <KanbanBoard
               todos={filteredTodos}
               onMoveTask={moveTaskStatus}
               onEditTask={handleOpenEdit}
-              onDeleteTask={deleteTodo}
+              onDeleteTask={handleDeleteTask}
               onTogglePin={togglePin}
               onStartPomodoro={handleStartPomodoro}
             />
-          ) : filteredTodos.length === 0 ? (
-            /* Empty State */
-            <div className="py-16 px-4 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white/40 dark:bg-zinc-900/40 text-center flex flex-col items-center justify-center">
-              <div className="w-14 h-14 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 mb-4">
-                {searchQuery || filterCategory !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' ? (
-                  <FilterX className="w-7 h-7 text-zinc-400" />
-                ) : (
-                  <Inbox className="w-7 h-7 text-zinc-400" />
-                )}
-              </div>
-              <h3 className="text-base font-bold text-zinc-800 dark:text-zinc-200">
-                Nenhuma tarefa encontrada
-              </h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-sm mt-1 mb-5">
-                {searchQuery || filterCategory !== 'all' || filterPriority !== 'all' || filterStatus !== 'all'
-                  ? 'Nenhuma tarefa corresponde aos filtros aplicados. Tente ajustar sua busca ou limpar os filtros.'
-                  : 'Sua lista está limpa! Aproveite para cadastrar uma nova meta ou tarefa do seu dia.'}
-              </p>
-              {searchQuery || filterCategory !== 'all' || filterPriority !== 'all' || filterStatus !== 'all' ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setFilterCategory('all');
-                    setFilterPriority('all');
-                    setFilterStatus('all');
-                  }}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-colors"
-                >
-                  Limpar todos os filtros
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenCreate}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all"
-                >
-                  Criar Primeira Tarefa
-                </button>
-              )}
-            </div>
           ) : (
-            /* Standard List View */
-            <div className="space-y-6">
-              {/* Pinned Tasks Group */}
-              {pinnedTasks.length > 0 && filterStatus !== 'pinned' && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 px-1">
-                    <Pin className="w-3.5 h-3.5 fill-current" />
-                    <span>Tarefas Fixadas ({pinnedTasks.length})</span>
+            <div className="flex-1 space-y-6">
+              {/* Seção 1: PRÓXIMAS TAREFAS */}
+              <div>
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-2 px-1">
+                  Próximas Tarefas
+                </h2>
+
+                {activeTasks.length === 0 ? (
+                  <div className="py-8 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl bg-white/40 dark:bg-zinc-900/40">
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Nenhuma tarefa pendente nesta visualização.
+                    </p>
                   </div>
-                  <div className="space-y-3">
-                    {pinnedTasks.map((task) => (
+                ) : (
+                  <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
+                    {activeTasks.map((task) => (
                       <TaskCard
                         key={task.id}
                         task={task}
                         onToggle={toggleTodo}
-                        onDelete={deleteTodo}
+                        onDelete={handleDeleteTask}
                         onPin={togglePin}
                         onEdit={handleOpenEdit}
                         onToggleSubTask={toggleSubTask}
                         onAddSubTask={addSubTask}
                         onDeleteSubTask={deleteSubTask}
                         onStartPomodoro={handleStartPomodoro}
+                        onMoveTask={moveTaskStatus}
+                        isPomodoroActiveTask={pomodoro.isTimerActive && pomodoro.taskId === task.id}
+                        groupName={groups.find((g) => g.id === task.groupId)?.name}
                       />
                     ))}
                   </div>
+                )}
+              </div>
+
+              {/* Seção 2: CONCLUÍDAS • {count} (Recolhível) */}
+              {completedTasks.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCompletedSectionOpen(!isCompletedSectionOpen)}
+                    aria-expanded={isCompletedSectionOpen}
+                    className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 mb-2 px-1 transition-colors"
+                  >
+                    {isCompletedSectionOpen ? (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    )}
+                    <span>Concluídas • {completedTasks.length}</span>
+                  </button>
+
+                  {isCompletedSectionOpen && (
+                    <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
+                      {completedTasks.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          onToggle={toggleTodo}
+                          onDelete={handleDeleteTask}
+                          onPin={togglePin}
+                          onEdit={handleOpenEdit}
+                          onToggleSubTask={toggleSubTask}
+                          onAddSubTask={addSubTask}
+                          onDeleteSubTask={deleteSubTask}
+                          onStartPomodoro={handleStartPomodoro}
+                          onMoveTask={moveTaskStatus}
+                          isPomodoroActiveTask={pomodoro.isTimerActive && pomodoro.taskId === task.id}
+                          groupName={groups.find((g) => g.id === task.groupId)?.name}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-
-              {/* Regular or Filtered Tasks Group */}
-              <div className="space-y-3">
-                {pinnedTasks.length > 0 && filterStatus !== 'pinned' && regularTasks.length > 0 && (
-                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 pt-2">
-                    <ListTodo className="w-3.5 h-3.5" />
-                    <span>Outras Tarefas ({regularTasks.length})</span>
-                  </div>
-                )}
-                <div className="space-y-3">
-                  {(pinnedTasks.length > 0 && filterStatus !== 'pinned' ? regularTasks : filteredTodos).map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggle={toggleTodo}
-                      onDelete={deleteTodo}
-                      onPin={togglePin}
-                      onEdit={handleOpenEdit}
-                      onToggleSubTask={toggleSubTask}
-                      onAddSubTask={addSubTask}
-                      onDeleteSubTask={deleteSubTask}
-                      onStartPomodoro={handleStartPomodoro}
-                    />
-                  ))}
-                </div>
-              </div>
             </div>
           )}
         </main>
-
-        {/* Footer */}
-        <footer className="pt-8 pb-4 border-t border-zinc-200/60 dark:border-zinc-800/60 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-400 gap-3">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-500" />
-            <span>AppToDo • Gestão Inteligente com Kanban & Pomodoro</span>
-          </div>
-          <div className="flex items-center gap-4 text-zinc-500 dark:text-zinc-400">
-            <button
-              type="button"
-              onClick={() => setIsShortcutsOpen(true)}
-              className="hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              Atalhos (Pressione ?)
-            </button>
-            <span>•</span>
-            <span>Armazenamento local seguro</span>
-          </div>
-        </footer>
       </div>
 
-      {/* Floating Action Button (Mobile) */}
-      <div className="fixed bottom-6 right-6 sm:hidden z-40">
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          aria-label="Adicionar Tarefa"
-          className="w-14 h-14 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-xl shadow-indigo-600/40 hover:scale-105 active:scale-95 transition-transform"
+      {/* 3. Barra Docked do Pomodoro (quando houver sessão ativa) */}
+      <PomodoroWidget
+        isVisible={pomodoro.isTimerActive}
+        isRunning={pomodoro.isRunning}
+        mode={pomodoro.mode}
+        formattedTime={pomodoro.formattedTime}
+        progressPercent={pomodoro.progressPercent}
+        taskTitle={pomodoro.taskTitle}
+        onToggleRun={pomodoro.toggleRun}
+        onOpenModal={pomodoro.openModal}
+        onReset={pomodoro.reset}
+      />
+
+      {/* 4. Navegação Inferior Mobile */}
+      <MobileNav
+        activeTab={mobileTab}
+        onSelectTab={handleMobileTabSelect}
+        onOpenGroups={() => setIsGroupsOpen(true)}
+      />
+
+      {/* Toast de Desfazer Exclusão */}
+      {undoToast && (
+        <div 
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-4 py-2.5 rounded-xl shadow-xl border border-zinc-700 dark:border-zinc-200 text-xs font-medium animate-in fade-in slide-in-from-bottom-3 duration-200"
         >
-          <Plus className="w-6 h-6 stroke-[3]" />
-        </button>
-      </div>
+          <span>Tarefa excluída: &quot;{undoToast.title}&quot;</span>
+          <button
+            type="button"
+            onClick={handleUndo}
+            className="text-[#a59bfb] dark:text-[#5b4fe9] font-bold hover:underline flex items-center gap-1"
+          >
+            <RotateCcw className="w-3 h-3" /> Desfazer
+          </button>
+        </div>
+      )}
 
-      {/* Task Modal (Create & Edit) */}
+      {/* Modais do Aplicativo */}
       <TaskModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTask(null);
+        }}
         onSubmit={handleModalSubmit}
         initialData={editingTask}
       />
 
-      {/* Pomodoro Timer Modal */}
       <PomodoroModal
-        isOpen={isPomodoroOpen}
-        onClose={() => setIsPomodoroOpen(false)}
-        task={activePomodoroTask}
-        onSessionComplete={incrementPomodoro}
+        isOpen={pomodoro.isModalOpen}
+        onClose={pomodoro.closeModal}
+        session={pomodoro.session}
+        timeLeft={pomodoro.timeLeft}
+        isRunning={pomodoro.isRunning}
+        mode={pomodoro.mode}
+        taskTitle={pomodoro.taskTitle}
+        progressPercent={pomodoro.progressPercent}
+        formattedTime={pomodoro.formattedTime}
+        soundEnabled={pomodoro.soundEnabled}
+        onToggleRun={pomodoro.toggleRun}
+        onReset={pomodoro.reset}
+        onSetMode={pomodoro.setMode}
+        onToggleSound={pomodoro.toggleSound}
       />
 
-      {/* Backup & Restore Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onOpenBackup={() => setIsBackupOpen(true)}
+        onOpenNotifications={() => setIsNotificationModalOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+      />
+
       <BackupModal
         isOpen={isBackupOpen}
         onClose={() => setIsBackupOpen(false)}
         todos={todos}
+        spaceName={currentSpaceName}
         onImport={importTodos}
       />
 
-      {/* Shortcuts Guide Modal */}
       <ShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
       />
 
-      {/* Supabase Cloud Auth Modal */}
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         user={user}
-        onAuthSuccess={refetchCloud}
+        onAuthSuccess={() => setIsAuthOpen(false)}
       />
 
-      {/* User Profile Modal */}
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         profile={profile}
         groups={groups}
-        onUpdateProfile={updateProfile}
-        onSignOut={async () => {
-          const supabase = createClient();
-          await supabase.auth.signOut();
-          refetchCloud();
+        onUpdateProfile={async (displayName, avatarUrl) => {
+          await updateProfile({ displayName, avatarUrl });
         }}
+        onSignOut={signOut}
       />
 
-      {/* Collaborative Groups Modal */}
       <GroupsModal
         isOpen={isGroupsOpen}
         onClose={() => setIsGroupsOpen(false)}
@@ -594,6 +951,20 @@ export default function Home() {
         isLoggedIn={!!user}
         onOpenAuth={() => setIsAuthOpen(true)}
       />
+
+      <NotificationModal
+        isOpen={isNotificationModalOpen}
+        onClose={() => setIsNotificationModalOpen(false)}
+        status={notificationStatus}
+        onStatusChange={setNotificationStatus}
+      />
+
+      {confirmConfig && confirmConfig.isOpen && (
+        <ConfirmModal
+          {...confirmConfig}
+          onClose={() => setConfirmConfig(null)}
+        />
+      )}
     </div>
   );
 }
