@@ -152,7 +152,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {user ? (
           /* User Logged In Profile View */
           <div className="flex flex-col items-center text-center py-3">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 mb-4">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 mb-4">
               <User className="w-8 h-8" />
             </div>
 
@@ -193,7 +193,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           /* Login, Sign Up & Forgot Password Form */
           <div>
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
+              <div className="w-12 h-12 rounded-2xl bg-[#5b4fe9] hover:bg-[#4d40d9] flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
                 <Cloud className="w-6 h-6" />
               </div>
               <div>
@@ -288,7 +288,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 min-h-[44px]"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-[#5b4fe9] hover:bg-[#4d40d9] text-white font-semibold text-sm shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-60 min-h-[44px]"
               >
                 {loading ? (
                   <>

@@ -218,7 +218,7 @@ export const PomodoroModal: React.FC<PomodoroModalProps> = ({
             aria-label={isRunning ? 'Pausar Pomodoro' : 'Iniciar Pomodoro'}
             className={`px-8 py-3.5 rounded-2xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all hover:scale-105 active:scale-95 text-white min-h-[44px] ${
               mode === 'focus'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 shadow-indigo-500/25'
+                ? 'bg-[#5b4fe9] hover:bg-[#4d40d9] shadow-indigo-500/25'
                 : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-500/25'
             }`}
           >
@@ -241,7 +241,7 @@ export const PomodoroModal: React.FC<PomodoroModalProps> = ({
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
           <span>
             {session.completedSessionIds?.length ?? 0}{' '}
-            {(session.completedSessionIds?.length ?? 0) === 1 ? 'sessão concluída' : 'sessões concluídas'} hoje
+            {(session.completedSessionIds?.length ?? 0) === 1 ? 'ciclo recente concluído' : 'ciclos recentes concluídos'}
           </span>
         </div>
       </div>

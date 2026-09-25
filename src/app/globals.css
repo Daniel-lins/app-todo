@@ -110,3 +110,5 @@ body {
   outline: 2px solid var(--focus-ring, #6366f1);
   outline-offset: 2px;
 }
+
+.safe-area-pb { padding-bottom: calc(0.375rem + env(safe-area-inset-bottom)); }

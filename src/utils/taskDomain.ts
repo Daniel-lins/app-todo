@@ -138,8 +138,8 @@ export function sanitizeTaskUpdates(
   cleanUpdates: Partial<TodoItem>;
   dbUpdates: Record<string, unknown>;
 } {
-  const cleanUpdates: Partial<TodoItem> = {};
-  const dbUpdates: Record<string, unknown> = {};
+  const cleanUpdates: Partial<TodoItem> = { updatedAt: nowISO };
+  const dbUpdates: Record<string, unknown> = { updated_at: nowISO };
 
   if ('title' in updates && updates.title !== undefined) {
     const cleanTitle = updates.title.trim();
@@ -185,6 +185,10 @@ export function sanitizeTaskUpdates(
     cleanUpdates.pomodoros = updates.pomodoros;
     dbUpdates.pomodoros = updates.pomodoros;
   }
+  if (updates.pomodoroSessionIds) {
+    cleanUpdates.pomodoroSessionIds = [...new Set(updates.pomodoroSessionIds)];
+    dbUpdates.pomodoro_session_ids = cleanUpdates.pomodoroSessionIds;
+  }
   if ('order' in updates && updates.order !== undefined) {
     cleanUpdates.order = updates.order;
     dbUpdates.order_index = updates.order;
@@ -192,8 +196,8 @@ export function sanitizeTaskUpdates(
 
   // Status e Conclusão: regra central para nunca divergirem
   if ('status' in updates || 'completed' in updates) {
-    const requestedStatus = updates.status ?? currentTask?.status;
-    const requestedCompleted = updates.completed ?? currentTask?.completed;
+    const requestedStatus = updates.status ?? (updates.completed === false ? 'todo' : currentTask?.status);
+    const requestedCompleted = updates.completed ?? (updates.status ? updates.status === 'completed' : currentTask?.completed);
 
     if (requestedStatus === 'completed' || requestedCompleted === true) {
       cleanUpdates.completed = true;

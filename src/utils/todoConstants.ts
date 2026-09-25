@@ -1,3 +1,4 @@
+import { getLocalDateString } from './dateUtils';
 import { Category, Priority } from '../types/todo';
 
 export interface CategoryMeta {
@@ -107,7 +108,7 @@ export const INITIAL_TODOS = [
     completed: false,
     priority: 'urgent' as const,
     category: 'work' as const,
-    dueDate: new Date().toISOString().split('T')[0],
+    dueDate: getLocalDateString(),
     dueTime: '18:00',
     pinned: true,
     subTasks: [
@@ -124,7 +125,7 @@ export const INITIAL_TODOS = [
     completed: false,
     priority: 'high' as const,
     category: 'finance' as const,
-    dueDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
+    dueDate: getLocalDateString(new Date(Date.now() + 86400000 * 2)),
     pinned: false,
     subTasks: [
       { id: 'sub-4', title: 'Exportar extrato bancário', completed: false },
@@ -139,7 +140,7 @@ export const INITIAL_TODOS = [
     completed: true,
     priority: 'medium' as const,
     category: 'health' as const,
-    dueDate: new Date().toISOString().split('T')[0],
+    dueDate: getLocalDateString(),
     pinned: false,
     subTasks: [],
     createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
@@ -152,7 +153,7 @@ export const INITIAL_TODOS = [
     completed: false,
     priority: 'low' as const,
     category: 'study' as const,
-    dueDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
+    dueDate: getLocalDateString(new Date(Date.now() + 86400000 * 5)),
     pinned: false,
     subTasks: [
       { id: 'sub-6', title: 'Assistir aula sobre revalidação de dados', completed: false },

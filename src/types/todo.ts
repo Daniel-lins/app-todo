@@ -30,6 +30,7 @@ export interface TodoItem {
   createdAt: string;
   completedAt?: string;
   pomodoros?: number;
+  pomodoroSessionIds?: string[];
   order?: number;
   groupId?: string;
   createdByName?: string;

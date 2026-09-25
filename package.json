@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "jiti tests/todoStorage.test.ts && jiti tests/destructiveOperations.test.ts && jiti tests/syncOperations.test.ts && jiti tests/groupCollaboration.test.ts && jiti tests/taskDomain.test.ts && jiti tests/authRecovery.test.ts && jiti tests/pomodoroNotifications.test.ts && jiti tests/backupImportExport.test.ts && jiti tests/accessibilityInteraction.test.ts && jiti tests/uiHierarchyOptimization.test.ts && jiti tests/themeConsolidation.test.ts"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
@@ -19,6 +19,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "jiti": "^2.7.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

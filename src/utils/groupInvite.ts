@@ -12,7 +12,7 @@ const UNAMBIGUOUS_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 export function generateInviteCode(length = 6): string {
   let result = '';
   for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * UNAMBIGUOUS_CHARS.length);
+    const randomIndex = crypto.getRandomValues(new Uint32Array(1))[0] % UNAMBIGUOUS_CHARS.length;
     result += UNAMBIGUOUS_CHARS.charAt(randomIndex);
   }
   return `TODO-${result}`;

@@ -414,7 +414,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all duration-200 disabled:opacity-50 min-h-[38px]"
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#5b4fe9] hover:bg-[#4d40d9] text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all duration-200 disabled:opacity-50 min-h-[38px]"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               <span>{initialData ? 'Salvar Alterações' : 'Criar Tarefa'}</span>

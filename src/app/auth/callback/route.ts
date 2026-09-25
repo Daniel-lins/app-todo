@@ -26,15 +26,7 @@ export async function GET(request: Request) {
   const defaultFallback = isRecovery ? '/auth/reset-password' : '/';
   const safeNext = getSafeRedirectUrl(rawNext, defaultFallback);
 
-  const forwardedHost = request.headers.get('x-forwarded-host');
-  const isLocalEnv = process.env.NODE_ENV === 'development';
-
-  const buildRedirectUrl = (pathWithQuery: string) => {
-    if (isLocalEnv || !forwardedHost) {
-      return `${origin}${pathWithQuery}`;
-    }
-    return `https://${forwardedHost}${pathWithQuery}`;
-  };
+  const buildRedirectUrl = (pathWithQuery: string) => new URL(pathWithQuery, origin).toString();
 
   // 1. Trata erro informado diretamente pela URL de callback do Supabase
   if (errorParam || errorCode || errorDescription) {

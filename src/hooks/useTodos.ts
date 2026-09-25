@@ -6,8 +6,7 @@ import {
   TaskStatus, 
   UserProfile,
   AppSyncStatus,
-  TaskGroup,
-  TaskSyncState
+  TaskGroup
 } from '../types/todo';
 import { 
   getContextId, 
@@ -19,27 +18,25 @@ import {
   prepareDemoTodos,
   prepareImportTodos,
   loadSyncQueue,
-  enqueueSyncItem,
-  dequeueSyncItem,
+  migrateGuestTasksToCloud,
   mergeCloudTasksWithLocal,
-  syncPendingItemToCloud,
-  SupabaseClientWithErrors
+  getStorageKey,
 } from '../utils/todoStorage';
 import {
   transitionTaskStatus,
   toggleTaskCompleted,
   toggleSubTaskInTask,
-  sanitizeTaskUpdates,
-  syncProfileCompletedCount
+  sanitizeTaskUpdates
 } from '../utils/taskDomain';
 
+import { stageTaskChanges, flushTaskChanges } from '../utils/taskPersistence';
 import { useAuthSession } from './useAuthSession';
 import { useUserGroups } from './useUserGroups';
 import { useTaskFilters } from './useTaskFilters';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export function useTodos() {
-  const { supabase, user, setUser, signOut: authSignOut } = useAuthSession();
+  const { supabase, user, isAuthLoaded, signOut: authSignOut } = useAuthSession();
   const {
     groups,
     setGroups,
@@ -51,10 +48,13 @@ export function useTodos() {
     leaveGroup: rawLeaveGroup,
     deleteGroup: rawDeleteGroup,
     fetchGroupMembers,
-  } = useUserGroups(supabase);
+  } = useUserGroups(supabase, user?.id || null);
 
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadedContext, setLoadedContext] = useState<string | null>(null);
+  const currentContextId = getContextId(user?.id, currentGroupId);
+  const profileRequestRef = useRef(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<AppSyncStatus>('synced');
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -71,6 +71,7 @@ export function useTodos() {
   const [lastDeletedTask, setLastDeletedTask] = useState<{
     task: TodoItem;
     contextId: string;
+    index: number;
   } | null>(null);
 
   // Helper: map Supabase DB row to TodoItem
@@ -88,6 +89,7 @@ export function useTodos() {
     created_at: string;
     completed_at?: string | null;
     pomodoros?: number;
+    pomodoro_session_ids?: string[];
     order_index?: number;
     order?: number;
     group_id?: string | null;
@@ -115,6 +117,7 @@ export function useTodos() {
       createdAt: row.created_at,
       completedAt: row.completed_at || undefined,
       pomodoros: row.pomodoros || 0,
+      pomodoroSessionIds: row.pomodoro_session_ids || [],
       order: row.order_index ?? row.order ?? 0,
       groupId: row.group_id || undefined,
       createdByName: row.created_by_name || undefined,
@@ -130,6 +133,7 @@ export function useTodos() {
 
   // Fetch user profile from Supabase
   const fetchUserProfile = useCallback(async (userObj: SupabaseUser) => {
+    const request = ++profileRequestRef.current;
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -137,6 +141,7 @@ export function useTodos() {
         .eq('id', userObj.id)
         .single();
 
+      if (request !== profileRequestRef.current) return;
       if (error && error.code !== 'PGRST116') {
         return;
       }
@@ -160,8 +165,8 @@ export function useTodos() {
           focusMinutes: 0,
           completedTasksCount: 0,
         };
-        const { error: insErr } = await supabase.from('profiles').insert(initialProfile);
-        if (!insErr) {
+        const { error: insErr } = await supabase.from('profiles').upsert({ id: initialProfile.id, email: initialProfile.email, display_name: initialProfile.displayName, avatar_url: initialProfile.avatarUrl, focus_minutes: 0, completed_tasks_count: 0 }, { onConflict: 'id', ignoreDuplicates: true });
+        if (!insErr && request === profileRequestRef.current) {
           setProfile(initialProfile);
         }
       }
@@ -173,6 +178,7 @@ export function useTodos() {
   // Update user profile in Supabase
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
     if (!user) return;
+    const request = profileRequestRef.current;
     try {
       const { error } = await supabase
         .from('profiles')
@@ -189,57 +195,45 @@ export function useTodos() {
         throw new Error(error.message);
       }
 
-      setProfile((prev) => (prev ? { ...prev, ...updates } : null));
+      if (request === profileRequestRef.current) setProfile((prev) => (prev ? { ...prev, ...updates } : null));
     } catch (err) {
       console.error('Error updating profile:', err);
       throw err;
     }
   }, [user, supabase]);
 
-  // Sincroniza a fila offline pendente com a nuvem
   const syncPendingQueue = useCallback(async (userId: string, targetGroupId: string | null) => {
-    const queue = loadSyncQueue(userId, targetGroupId);
-    if (queue.length === 0) {
-      setSyncStatus('synced');
-      setPendingSyncCount(0);
-      setSyncError(null);
-      return;
+    const context = getContextId(userId, targetGroupId);
+    if (activeContextRef.current === context) {
+      setIsSyncing(true);
+      setSyncStatus('syncing');
+      setPendingSyncCount(loadSyncQueue(userId, targetGroupId).length);
     }
-
-    setIsSyncing(true);
-    setSyncStatus('syncing');
-    let hasFailures = false;
-    let lastErrorMsg: string | null = null;
-
-    for (const item of queue) {
-      const result = await syncPendingItemToCloud(item, userId, targetGroupId, supabase as unknown as SupabaseClientWithErrors);
-      if (result.success) {
-        dequeueSyncItem(userId, targetGroupId, item.id);
-      } else {
-        hasFailures = true;
-        lastErrorMsg = result.error || 'Erro ao sincronizar item pendente.';
-        break;
-      }
+    let failure: string | null = null;
+    try {
+      await flushTaskChanges(supabase, userId, targetGroupId);
+    } catch (error) {
+      failure = error instanceof Error ? error.message : 'Falha ao sincronizar. Suas alterações continuam salvas neste dispositivo.';
     }
-
-    const remainingQueue = loadSyncQueue(userId, targetGroupId);
-    setPendingSyncCount(remainingQueue.length);
-
-    if (hasFailures) {
-      setSyncStatus('error');
-      setSyncError(lastErrorMsg);
-    } else {
-      setSyncStatus('synced');
-      setSyncError(null);
+    if (activeContextRef.current === context) {
+      activeRequestIdRef.current++;
+      const remaining = loadSyncQueue(userId, targetGroupId);
+      setPendingSyncCount(remaining.length);
+      setSyncStatus(failure ? 'error' : remaining.length ? 'syncing' : 'synced');
+      setSyncError(failure);
+      setIsSyncing(false);
+      setTodos(loadContextTodos(userId, targetGroupId).todos);
+      if (!failure && user?.id === userId) void fetchUserProfile(user);
     }
-    setIsSyncing(false);
-  }, [supabase]);
+    return !failure;
+  }, [supabase, user, fetchUserProfile]);
 
   // Carrega tarefas da nuvem (isoladas por usuário e grupo)
   const fetchCloudTodos = useCallback(
     async (userId: string, targetGroupId?: string | null) => {
       const activeGroup = targetGroupId !== undefined ? targetGroupId : currentGroupId;
       const targetContextId = getContextId(userId, activeGroup);
+      if (activeContextRef.current !== targetContextId) return;
 
       activeRequestIdRef.current++;
       const currentRequestId = activeRequestIdRef.current;
@@ -260,7 +254,7 @@ export function useTodos() {
       const { todos: localCache } = loadContextTodos(userId, activeGroup);
       if (activeRequestIdRef.current === currentRequestId) {
         setTodos(localCache);
-        setIsLoaded(true);
+        if (localCache.length) setIsLoaded(true);
       }
 
       try {
@@ -280,6 +274,7 @@ export function useTodos() {
             created_at,
             completed_at,
             pomodoros,
+            pomodoro_session_ids,
             order_index,
             group_id,
             created_by_name,
@@ -313,11 +308,13 @@ export function useTodos() {
         if (data) {
           const cloudTodos: TodoItem[] = data.map(mapDbToTodo);
           const currentQueue = loadSyncQueue(userId, activeGroup);
-          const merged = mergeCloudTasksWithLocal(cloudTodos, localCache, currentQueue);
+          const merged = mergeCloudTasksWithLocal(loadContextTodos(userId, activeGroup).todos, cloudTodos, currentQueue);
 
           saveContextTodos(userId, activeGroup, merged);
           setTodos(merged);
 
+          setLoadedContext(targetContextId);
+          setIsLoaded(true);
           if (currentQueue.length > 0) {
             await syncPendingQueue(userId, activeGroup);
           } else {
@@ -334,6 +331,7 @@ export function useTodos() {
         if (activeRequestIdRef.current === currentRequestId) {
           setIsSyncing(false);
           setIsLoaded(true);
+          setLoadedContext(targetContextId);
         }
       }
     },
@@ -343,50 +341,75 @@ export function useTodos() {
   // Tentativa explícita de nova sincronização
   const retrySync = useCallback(async () => {
     if (!user) return;
+    const context = getContextId(user.id, currentGroupId);
     try {
       setIsSyncing(true);
       await syncPendingQueue(user.id, currentGroupId);
+      if (activeContextRef.current !== context) return;
       await fetchCloudTodos(user.id, currentGroupId);
     } catch (err) {
+      if (activeContextRef.current !== context) return;
       setSyncStatus('error');
       setSyncError(err instanceof Error ? err.message : 'Erro ao tentar sincronizar novamente.');
     } finally {
-      setIsSyncing(false);
+      if (activeContextRef.current === context) setIsSyncing(false);
     }
   }, [user, currentGroupId, syncPendingQueue, fetchCloudTodos]);
 
-  // Carregamento de tarefas unificado e sem duplicidade ao trocar de contexto (visitante / conta / grupo)
   useEffect(() => {
-    let isCancelled = false;
+    if (!isAuthLoaded) return;
+    let cancelled = false;
+    const requests = activeRequestIdRef;
+    const profiles = profileRequestRef;
+    activeContextRef.current = getContextId(user?.id, currentGroupId);
+    activeRequestIdRef.current++;
+    profileRequestRef.current++;
 
-    const loadContext = async () => {
-      if (user) {
-        await Promise.allSettled([
-          fetchUserProfile(user),
-          fetchCloudGroups(user.id),
-          fetchCloudTodos(user.id, currentGroupId),
-        ]);
-      } else {
-        activeRequestIdRef.current++;
-        activeContextRef.current = 'guest';
-        const { todos: guestTodos } = loadContextTodos(null, null);
-        if (!isCancelled) {
+    const load = async () => {
+      try {
+        if (user) {
+          if (!currentGroupId) {
+            const migration = await migrateGuestTasksToCloud(user.id, supabase);
+            if (cancelled) return;
+            if (!migration.success && migration.error) setSyncError(migration.error);
+          }
+          if (cancelled) return;
+          await Promise.allSettled([fetchUserProfile(user), fetchCloudGroups(user.id), fetchCloudTodos(user.id, currentGroupId)]);
+        } else {
+          const guest = loadContextTodos(null, null).todos;
+          if (cancelled) return;
           setProfile(null);
-          setTodos(guestTodos);
-          setIsLoaded(true);
+          setGroups([]);
+          setTodos(guest);
           setSyncStatus('local_only');
           setPendingSyncCount(0);
           setSyncError(null);
+          setIsLoaded(true);
+          setLoadedContext('guest');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSyncError(error instanceof Error ? error.message : 'Falha ao carregar as tarefas.');
+          setSyncStatus('error');
         }
       }
     };
+    void load();
+    return () => { cancelled = true; requests.current++; profiles.current++; };
+  }, [isAuthLoaded, user, currentGroupId, supabase, fetchCloudTodos, fetchUserProfile, fetchCloudGroups, setGroups]);
 
-    void loadContext();
-
-    return () => {
-      isCancelled = true;
+  useEffect(() => {
+    const retry = () => { if (user) void retrySync(); };
+    const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        if (user) void retrySync();
+        else setTodos(loadContextTodos(null, null).todos);
+      }
     };
-  }, [user, currentGroupId, fetchCloudTodos, fetchUserProfile, fetchCloudGroups]);
+    window.addEventListener('online', retry);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('online', retry); document.removeEventListener('visibilitychange', refresh); };
+  }, [user, retrySync]);
 
   // Realtime subscription limpa e sem duplicidade para tarefas e membros
   useEffect(() => {
@@ -492,451 +515,133 @@ export function useTodos() {
     setViewMode,
     filteredTodos,
     stats,
+    todayDateStr,
   } = useTaskFilters(todos);
 
-  // Operações de Tarefas: Adicionar
-  const addTodo = useCallback(
-    async (taskData: Omit<TodoItem, 'id' | 'createdAt' | 'completed'>) => {
-      const newId = crypto.randomUUID();
-      const now = new Date().toISOString();
-      const targetGroupId = currentGroupId;
-      const currentUserId = user?.id || null;
+  // All mutations share the same durable outbox and atomic remote transaction.
+  const persist = useCallback(async (next: TodoItem[], upserts: TodoItem[], deletes: string[] = []) => {
+    const userId = user?.id || null;
+    const context = getContextId(userId, currentGroupId);
+    if (activeContextRef.current !== context || !isAuthLoaded) throw new Error('Aguarde o carregamento deste espaço.');
+    try {
+      const pendingIds = new Set(upserts.map(t => t.id));
+      const prepared = next.map(t => pendingIds.has(t.id)
+        ? { ...t, syncState: 'local_only' as const, syncError: undefined } : t);
+      stageTaskChanges(userId, currentGroupId, prepared, upserts, deletes);
+      activeRequestIdRef.current++; // An earlier read must not overwrite this write.
+      setTodos(prepared);
+      if (user) return await syncPendingQueue(user.id, currentGroupId);
+      setSyncStatus('local_only');
+      setSyncError(null);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar a alteração.';
+      setSyncStatus('error');
+      setSyncError(message);
+      throw error;
+    }
+  }, [user, currentGroupId, isAuthLoaded, syncPendingQueue]);
 
-      const newTask: TodoItem = {
-        id: newId,
-        title: taskData.title,
-        description: taskData.description,
-        completed: false,
-        status: taskData.status || 'todo',
-        priority: taskData.priority,
-        category: taskData.category,
-        dueDate: taskData.dueDate,
-        dueTime: taskData.dueTime,
-        pinned: taskData.pinned,
-        subTasks: taskData.subTasks || [],
-        createdAt: now,
-        pomodoros: 0,
-        order: todos.length,
-        groupId: targetGroupId || undefined,
-        createdByName: profile?.displayName || user?.email?.split('@')[0] || undefined,
-        syncState: user ? 'syncing' : 'local_only',
-      };
+  const readCurrent = useCallback(() => loadContextTodos(user?.id, currentGroupId).todos, [user?.id, currentGroupId]);
 
-      setTodos((prev) => {
-        const next = [newTask, ...prev];
-        saveContextTodos(currentUserId, targetGroupId, next);
-        return next;
-      });
+  const addTodo = useCallback(async (taskData: Omit<TodoItem, 'id' | 'createdAt' | 'completed'>) => {
+    const current = readCurrent();
+    const now = new Date().toISOString();
+    const newTask: TodoItem = {
+      ...taskData, id: crypto.randomUUID(), createdAt: now, updatedAt: now,
+      completed: taskData.status === 'completed', completedAt: taskData.status === 'completed' ? now : undefined,
+      status: taskData.status || 'todo', pomodoros: 0, order: current.length,
+      groupId: currentGroupId || undefined,
+      createdByName: profile?.displayName || user?.email?.split('@')[0],
+      subTasks: taskData.subTasks || [],
+    };
+    await persist([newTask, ...current], [newTask]);
+  }, [readCurrent, currentGroupId, profile, user, persist]);
 
-      if (user) {
-        try {
-          const { error: taskErr } = await supabase.from('tasks').insert({
-            id: newTask.id,
-            user_id: user.id,
-            group_id: targetGroupId,
-            title: newTask.title,
-            description: newTask.description || null,
-            completed: false,
-            status: newTask.status,
-            priority: newTask.priority,
-            category: newTask.category,
-            due_date: newTask.dueDate || null,
-            due_time: newTask.dueTime || null,
-            pinned: newTask.pinned,
-            created_at: newTask.createdAt,
-            pomodoros: 0,
-            order_index: newTask.order ?? 0,
-            created_by_name: newTask.createdByName || null,
-          });
+  const updateTodo = useCallback(async (id: string, updates: Partial<Omit<TodoItem, 'id' | 'createdAt'>>) => {
+    const current = readCurrent();
+    const original = current.find(t => t.id === id);
+    if (!original) return;
+    const { cleanUpdates } = sanitizeTaskUpdates(updates, original);
+    const updated = { ...original, ...cleanUpdates };
+    await persist(current.map(t => t.id === id ? updated : t), [updated]);
 
-          if (taskErr) throw new Error(taskErr.message);
+  }, [readCurrent, persist]);
 
-          if (newTask.subTasks.length > 0) {
-            const subPayloads = newTask.subTasks.map((st) => ({
-              id: st.id,
-              task_id: newTask.id,
-              title: st.title,
-              completed: st.completed,
-            }));
-            const { error: subErr } = await supabase.from('subtasks').insert(subPayloads);
-            if (subErr) throw new Error(subErr.message);
-          }
-
-          setTodos((prev) =>
-            prev.map((t) => (t.id === newTask.id ? { ...t, syncState: 'synced', syncError: undefined } : t))
-          );
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : 'Falha ao sincronizar na nuvem.';
-          enqueueSyncItem(user.id, targetGroupId, {
-            taskId: newTask.id,
-            action: 'upsert',
-            contextId: targetGroupId || user.id,
-            task: newTask,
-          });
-          setTodos((prev) =>
-            prev.map((t) => (t.id === newTask.id ? { ...t, syncState: 'error', syncError: errMsg } : t))
-          );
-          setSyncStatus('error');
-          setSyncError(errMsg);
-          setPendingSyncCount((c) => c + 1);
-        }
-      }
-    },
-    [currentGroupId, user, profile, todos.length, supabase]
-  );
-
-  // Operações de Tarefas: Atualizar
-  const updateTodo = useCallback(
-    async (id: string, updates: Partial<Omit<TodoItem, 'id' | 'createdAt'>>) => {
-      const currentUserId = user?.id || null;
-      const targetGroupId = currentGroupId;
-      const existingTask = todos.find((t) => t.id === id);
-      if (!existingTask) return;
-
-      const { cleanUpdates, dbUpdates } = sanitizeTaskUpdates(updates, existingTask);
-
-      const nextSyncState: TaskSyncState = user ? 'syncing' : 'local_only';
-      setTodos((prev) => {
-        const next: TodoItem[] = prev.map((t) => (t.id === id ? { ...t, ...cleanUpdates, syncState: nextSyncState } : t));
-        saveContextTodos(currentUserId, targetGroupId, next);
-        return next;
-      });
-
-      if (user) {
-        try {
-          if (Object.keys(dbUpdates).length > 0) {
-            const { error: taskErr } = await supabase.from('tasks').update(dbUpdates).eq('id', id);
-            if (taskErr) throw new Error(taskErr.message);
-          }
-
-          if (updates.subTasks !== undefined) {
-            await supabase.from('subtasks').delete().eq('task_id', id);
-            if (updates.subTasks.length > 0) {
-              const subPayloads = updates.subTasks.map((st) => ({
-                id: st.id,
-                task_id: id,
-                title: st.title,
-                completed: st.completed,
-              }));
-              const { error: subErr } = await supabase.from('subtasks').insert(subPayloads);
-              if (subErr) throw new Error(subErr.message);
-            }
-          }
-
-          setTodos((prev) =>
-            prev.map((t) => (t.id === id ? { ...t, syncState: 'synced', syncError: undefined } : t))
-          );
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : 'Falha ao sincronizar atualização.';
-          enqueueSyncItem(user.id, targetGroupId, {
-            taskId: id,
-            action: 'upsert',
-            contextId: targetGroupId || user.id,
-            task: { ...existingTask, ...cleanUpdates },
-          });
-          setTodos((prev) =>
-            prev.map((t) => (t.id === id ? { ...t, syncState: 'error', syncError: errMsg } : t))
-          );
-          setSyncStatus('error');
-          setSyncError(errMsg);
-          setPendingSyncCount((c) => c + 1);
-        }
-      }
-    },
-    [user, currentGroupId, todos, supabase]
-  );
-
-  // Operações de Tarefas: Alternar Conclusão
-  const toggleTodo = useCallback(
-    async (id: string) => {
-      const task = todos.find((t) => t.id === id);
-      if (!task) return;
-
-      const { completed, status, completedAt } = toggleTaskCompleted(task);
-      await updateTodo(id, { completed, status, completedAt });
-
-      if (user && profile) {
-        const newCount = syncProfileCompletedCount(profile.completedTasksCount, !task.completed ? 1 : -1);
-        updateProfile({ completedTasksCount: newCount }).catch(console.error);
-      }
-    },
-    [todos, updateTodo, user, profile, updateProfile]
-  );
-
-  // Operações de Tarefas: Mover Status
-  const moveTaskStatus = useCallback(
-    async (id: string, newStatus: TaskStatus) => {
-      const task = todos.find((t) => t.id === id);
-      if (!task) return;
-
-      const { status, completed, completedAt } = transitionTaskStatus(task, newStatus);
-      await updateTodo(id, { status, completed, completedAt });
-    },
-    [todos, updateTodo]
-  );
-
-  // Operações de Tarefas: Fixar
-  const togglePin = useCallback(
-    async (id: string) => {
-      const task = todos.find((t) => t.id === id);
-      if (!task) return;
-      await updateTodo(id, { pinned: !task.pinned });
-    },
-    [todos, updateTodo]
-  );
-
-  // Operações de Tarefas: Excluir (com histórico para Desfazer)
-  const deleteTodo = useCallback(
-    async (id: string) => {
-      const targetContextId = getContextId(user?.id || null, currentGroupId);
-      const { remaining, deletedTask } = deleteTodoInContext(todos, id);
-
-      if (deletedTask) {
-        setLastDeletedTask({
-          task: deletedTask,
-          contextId: targetContextId,
-        });
-      }
-
-      saveContextTodos(user?.id || null, currentGroupId, remaining);
-      setTodos(remaining);
-
-      if (user) {
-        try {
-          const { error } = await supabase.from('tasks').delete().eq('id', id);
-          if (error) throw new Error(error.message);
-        } catch {
-          enqueueSyncItem(user.id, currentGroupId, {
-            taskId: id,
-            action: 'delete',
-            contextId: currentGroupId || user.id,
-          });
-          setSyncStatus('error');
-          setPendingSyncCount((c) => c + 1);
-        }
-      }
-    },
-    [user, currentGroupId, todos, supabase]
-  );
-
-  // Desfazer Exclusão
+  const toggleTodo = useCallback(async (id: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, toggleTaskCompleted(task));
+  }, [readCurrent, updateTodo]);
+  const moveTaskStatus = useCallback(async (id: string, status: TaskStatus) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, transitionTaskStatus(task, status));
+  }, [readCurrent, updateTodo]);
+  const togglePin = useCallback(async (id: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, { pinned: !task.pinned });
+  }, [readCurrent, updateTodo]);
+  const deleteTodo = useCallback(async (id: string) => {
+    const { remaining, deletedTask, index } = deleteTodoInContext(readCurrent(), id);
+    if (!deletedTask) return;
+    setLastDeletedTask({ task: deletedTask, contextId: getContextId(user?.id, currentGroupId), index });
+    await persist(remaining, [], [id]);
+  }, [readCurrent, user?.id, currentGroupId, persist]);
   const undoDeleteTodo = useCallback(async () => {
-    if (!lastDeletedTask) return;
-    const currentContextId = getContextId(user?.id || null, currentGroupId);
-    if (lastDeletedTask.contextId !== currentContextId) return;
-
-    const taskToRestore = lastDeletedTask.task;
-    const restoredList = restoreTodoInContext(todos, taskToRestore);
-    saveContextTodos(user?.id || null, currentGroupId, restoredList);
-    setTodos(restoredList);
+    if (!lastDeletedTask || lastDeletedTask.contextId !== getContextId(user?.id, currentGroupId)) return;
+    const restored = { ...lastDeletedTask.task, updatedAt: new Date().toISOString() };
+    await persist(restoreTodoInContext(readCurrent(), restored, lastDeletedTask.index), [restored]);
     setLastDeletedTask(null);
-
-    if (user) {
-      await addTodo({
-        title: taskToRestore.title,
-        description: taskToRestore.description,
-        status: taskToRestore.status,
-        priority: taskToRestore.priority,
-        category: taskToRestore.category,
-        dueDate: taskToRestore.dueDate,
-        dueTime: taskToRestore.dueTime,
-        pinned: taskToRestore.pinned,
-        subTasks: taskToRestore.subTasks,
-      });
-    }
-  }, [lastDeletedTask, user, currentGroupId, todos, addTodo]);
-
-  const clearDeletedHistory = useCallback(() => {
-    setLastDeletedTask(null);
-  }, []);
-
-  // Subtarefas
-  const addSubTask = useCallback(
-    async (todoId: string, title: string) => {
-      const task = todos.find((t) => t.id === todoId);
-      if (!task) return;
-      const newSub = { id: crypto.randomUUID(), title, completed: false };
-      await updateTodo(todoId, { subTasks: [...task.subTasks, newSub] });
-    },
-    [todos, updateTodo]
-  );
-
-  const toggleSubTask = useCallback(
-    async (todoId: string, subTaskId: string) => {
-      const task = todos.find((t) => t.id === todoId);
-      if (!task) return;
-      const { updatedTask } = toggleSubTaskInTask(task, subTaskId);
-
-      await updateTodo(todoId, {
-        subTasks: updatedTask.subTasks,
-        completed: updatedTask.completed,
-        status: updatedTask.status,
-        completedAt: updatedTask.completedAt,
-      });
-    },
-    [todos, updateTodo]
-  );
-
-  const deleteSubTask = useCallback(
-    async (todoId: string, subTaskId: string) => {
-      const task = todos.find((t) => t.id === todoId);
-      if (!task) return;
-      const nextSubs = task.subTasks.filter((s) => s.id !== subTaskId);
-      await updateTodo(todoId, { subTasks: nextSubs });
-    },
-    [todos, updateTodo]
-  );
-
-  // Operações em Massa: Limpar Concluídas
+  }, [lastDeletedTask, user?.id, currentGroupId, readCurrent, persist]);
+  const clearDeletedHistory = useCallback(() => setLastDeletedTask(null), []);
+  const addSubTask = useCallback(async (id: string, title: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, { subTasks: [...task.subTasks, { id: crypto.randomUUID(), title, completed: false }] });
+  }, [readCurrent, updateTodo]);
+  const toggleSubTask = useCallback(async (id: string, subId: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, toggleSubTaskInTask(task, subId).updatedTask);
+  }, [readCurrent, updateTodo]);
+  const deleteSubTask = useCallback(async (id: string, subId: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (task) await updateTodo(id, { subTasks: task.subTasks.filter(st => st.id !== subId) });
+  }, [readCurrent, updateTodo]);
   const clearCompleted = useCallback(async () => {
-    const currentUserId = user?.id || null;
-    const targetGroupId = currentGroupId;
-    const { remaining, removed } = clearCompletedInContext(todos);
-    if (removed.length === 0) return;
+    const { remaining, removed } = clearCompletedInContext(readCurrent());
+    await persist(remaining, [], removed.map(t => t.id));
+  }, [readCurrent, persist]);
 
-    saveContextTodos(currentUserId, targetGroupId, remaining);
-    setTodos(remaining);
-
-    if (user) {
-      try {
-        let query = supabase.from('tasks').delete().eq('completed', true);
-        if (targetGroupId) {
-          query = query.eq('group_id', targetGroupId);
-        } else {
-          query = query.eq('user_id', user.id).is('group_id', null);
-        }
-        await query;
-      } catch (err) {
-        console.error('Falha ao limpar concluídas na nuvem:', err);
-      }
-    }
-  }, [user, currentGroupId, todos, supabase]);
-
-  // Exemplos (Append ou Replace)
-  const resetToDemo = useCallback(
-    async (mode: 'append' | 'replace' = 'append') => {
-      const currentUserId = user?.id || null;
-      const targetGroupId = currentGroupId;
-      const currentTodos = todos;
-
-      const nextTodos = prepareDemoTodos(currentTodos, mode, targetGroupId);
-      saveContextTodos(currentUserId, targetGroupId, nextTodos);
-      setTodos(nextTodos);
-
-      if (user) {
-        try {
-          if (mode === 'replace') {
-            let delQuery = supabase.from('tasks').delete();
-            if (targetGroupId) {
-              delQuery = delQuery.eq('group_id', targetGroupId);
-            } else {
-              delQuery = delQuery.eq('user_id', user.id).is('group_id', null);
-            }
-            await delQuery;
-          }
-          for (const item of nextTodos) {
-            await supabase.from('tasks').upsert({
-              id: item.id,
-              user_id: user.id,
-              group_id: targetGroupId || null,
-              title: item.title,
-              description: item.description || null,
-              status: item.status,
-              completed: item.completed,
-              priority: item.priority,
-              category: item.category,
-              due_date: item.dueDate || null,
-              due_time: item.dueTime || null,
-              pinned: item.pinned,
-              order_index: item.order || 0,
-            });
-          }
-          await fetchCloudTodos(user.id, targetGroupId);
-        } catch (err) {
-          console.error('Falha ao salvar tarefas demo no banco:', err);
-        }
-      }
-    },
-    [user, currentGroupId, todos, supabase, fetchCloudTodos]
-  );
-
-  // Importar Tarefas (Merge ou Replace)
-  const importTodos = useCallback(
-    async (importedList: TodoItem[], mode: 'merge' | 'replace') => {
-      const currentUserId = user?.id || null;
-      const targetGroupId = currentGroupId;
-      const currentTodos = todos;
-
-      const nextTodos = prepareImportTodos(currentTodos, importedList, mode, targetGroupId);
-      saveContextTodos(currentUserId, targetGroupId, nextTodos);
-      setTodos(nextTodos);
-
-      if (user) {
-        try {
-          if (mode === 'replace') {
-            let delQuery = supabase.from('tasks').delete();
-            if (targetGroupId) {
-              delQuery = delQuery.eq('group_id', targetGroupId);
-            } else {
-              delQuery = delQuery.eq('user_id', user.id).is('group_id', null);
-            }
-            await delQuery;
-          }
-          for (const item of nextTodos) {
-            await supabase.from('tasks').upsert({
-              id: item.id,
-              user_id: user.id,
-              group_id: targetGroupId || null,
-              title: item.title,
-              description: item.description || null,
-              status: item.status,
-              completed: item.completed,
-              priority: item.priority,
-              category: item.category,
-              due_date: item.dueDate || null,
-              due_time: item.dueTime || null,
-              pinned: item.pinned,
-              order_index: item.order || 0,
-            });
-          }
-          await fetchCloudTodos(user.id, targetGroupId);
-        } catch (err) {
-          console.error('Falha ao sincronizar tarefas importadas no banco:', err);
-        }
-      }
-    },
-    [user, currentGroupId, todos, supabase, fetchCloudTodos]
-  );
-
-  const reorderTodos = useCallback((newOrderedTodos: TodoItem[]) => {
-    setTodos(newOrderedTodos);
-  }, []);
-
-  const incrementPomodoro = useCallback(
-    async (id: string) => {
-      const task = todos.find((t) => t.id === id);
-      if (!task) return;
-      await updateTodo(id, { pomodoros: (task.pomodoros || 0) + 1 });
-      if (user && profile) {
-        updateProfile({ focusMinutes: (profile.focusMinutes || 0) + 25 }).catch(console.error);
-      }
-    },
-    [todos, updateTodo, user, profile, updateProfile]
-  );
-
-  // Logout seguro
+  const replaceList = useCallback(async (next: TodoItem[]) => {
+    const before = readCurrent();
+    // Recoverable snapshot before any bulk replacement.
+    localStorage.setItem(`${getStorageKey(user?.id, currentGroupId)}_before_import`, JSON.stringify(before));
+    const ids = new Set(next.map(t => t.id));
+    const success = await persist(next, next, before.filter(t => !ids.has(t.id)).map(t => t.id));
+    return { synced: success, localOnly: !user };
+  }, [readCurrent, user, currentGroupId, persist]);
+  const resetToDemo = useCallback(async (mode: 'append' | 'replace' = 'append') => {
+    return replaceList(prepareDemoTodos(readCurrent(), mode, currentGroupId));
+  }, [readCurrent, currentGroupId, replaceList]);
+  const importTodos = useCallback(async (items: TodoItem[], mode: 'merge' | 'replace') => {
+    return replaceList(prepareImportTodos(readCurrent(), items, mode, currentGroupId));
+  }, [readCurrent, currentGroupId, replaceList]);
+  const reorderTodos = useCallback(async (ordered: TodoItem[]) => {
+    const next = ordered.map((task, order) => ({ ...task, order, updatedAt: new Date().toISOString() }));
+    await persist(next, next);
+  }, [persist]);
+  const incrementPomodoro = useCallback(async (id: string, sessionId: string) => {
+    const task = readCurrent().find(t => t.id === id);
+    if (!task || task.pomodoroSessionIds?.includes(sessionId)) return;
+    await updateTodo(id, { pomodoros: (task.pomodoros || 0) + 1, pomodoroSessionIds: [...(task.pomodoroSessionIds || []), sessionId] });
+  }, [readCurrent, updateTodo]);
   const signOut = useCallback(async () => {
+    await authSignOut();
     activeRequestIdRef.current++;
+    profileRequestRef.current++;
     activeContextRef.current = 'guest';
     setProfile(null);
     setGroups([]);
     setCurrentGroupId(null);
-    await authSignOut();
-    setUser(null);
-    const { todos: guestTodos } = loadContextTodos(null, null);
-    setTodos(guestTodos);
-    setIsLoaded(true);
-  }, [authSignOut, setUser, setGroups, setCurrentGroupId]);
+  }, [authSignOut, setGroups, setCurrentGroupId]);
 
   const createGroup = useCallback(
     async (name: string, description?: string, color?: string): Promise<TaskGroup> => {
@@ -977,9 +682,11 @@ export function useTodos() {
   );
 
   return {
-    todos,
-    filteredTodos,
-    isLoaded,
+    todos: loadedContext === currentContextId ? todos : [],
+    filteredTodos: loadedContext === currentContextId ? filteredTodos : [],
+    isLoaded: isLoaded && loadedContext === currentContextId,
+    contextId: currentContextId,
+    todayDateStr,
     user,
     isSyncing,
     refetchCloud: () => user && fetchCloudTodos(user.id, currentGroupId),
@@ -1010,7 +717,13 @@ export function useTodos() {
     reorderTodos,
     incrementPomodoro,
     importTodos,
-    profile,
+    getPreviousBackup: () => {
+      try {
+        const raw = localStorage.getItem(`${getStorageKey(user?.id, currentGroupId)}_before_import`);
+        return raw ? JSON.parse(raw) as TodoItem[] : null;
+      } catch { return null; }
+    },
+    profile: profile?.id === user?.id ? profile : null,
     updateProfile,
     groups,
     currentGroupId,

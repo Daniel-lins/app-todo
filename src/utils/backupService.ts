@@ -12,7 +12,7 @@ export const MAX_TASKS_PER_BACKUP = 1000;
 export const MAX_SUBTASKS_PER_TASK = 50;
 
 export const VALID_PRIORITIES: Priority[] = ['low', 'medium', 'high', 'urgent'];
-export const VALID_CATEGORIES: Category[] = ['work', 'personal', 'study', 'health', 'other'];
+export const VALID_CATEGORIES: Category[] = ['work', 'personal', 'study', 'health', 'finance', 'other'];
 export const VALID_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'completed'];
 
 export interface BackupFileV2 {
@@ -451,36 +451,12 @@ export function resolveImportTodos(
   const targetGroup = targetGroupId || undefined;
 
   // Sanitiza atribuindo o groupId correto
+  // Import creates copies: IDs from another account/space must never update its rows.
   const preparedImported = importedTodos.map((t) => ({
-    ...t,
-    groupId: targetGroup,
+    ...t, id: crypto.randomUUID(), groupId: targetGroup,
+    subTasks: t.subTasks.map(st => ({ ...st, id: crypto.randomUUID() })),
+    updatedAt: new Date().toISOString(),
   }));
 
-  if (mode === 'replace') {
-    return preparedImported;
-  }
-
-  // Modo 'merge':
-  const existingIdSet = new Set(existingTodos.map((t) => t.id));
-  const resultList = [...existingTodos];
-
-  for (const item of preparedImported) {
-    if (existingIdSet.has(item.id)) {
-      // Conflito de ID: atribui novo ID exclusivo para o item importado para ambos coexistirem
-      const newId = `${item.id}-imp-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 5)}`;
-      resultList.push({
-        ...item,
-        id: newId,
-        subTasks: item.subTasks.map((st, sidx) => ({
-          ...st,
-          id: `sub-${newId}-${sidx}`,
-        })),
-      });
-    } else {
-      resultList.push(item);
-      existingIdSet.add(item.id);
-    }
-  }
-
-  return resultList;
+  return mode === 'replace' ? preparedImported : [...existingTodos, ...preparedImported];
 }

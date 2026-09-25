@@ -55,23 +55,14 @@ export function isOnlyDemoTasks(todos: unknown): boolean {
   if (!Array.isArray(todos) || todos.length !== INITIAL_TODOS.length) {
     return false;
   }
-  const demoMap = new Map(INITIAL_TODOS.map((d) => [d.id, d.title]));
-  return todos.every(
-    (t) =>
-      typeof t === 'object' &&
-      t !== null &&
-      'id' in t &&
-      'title' in t &&
-      demoMap.has((t as { id: string }).id) &&
-      demoMap.get((t as { id: string }).id) === (t as { title: string }).title
-  );
+  return todos.every((task, index) => JSON.stringify(task) === JSON.stringify(INITIAL_TODOS[index]));
 }
 
 function getSafeStorage(customStorage?: StorageLike): StorageLike | null {
   if (customStorage) return customStorage;
-  if (typeof window !== 'undefined' && window.localStorage) {
-    return window.localStorage;
-  }
+  try {
+    if (typeof window !== 'undefined') return window.localStorage;
+  } catch { /* Storage may be blocked by the browser. */ }
   return null;
 }
 
@@ -140,6 +131,7 @@ export function loadContextTodos(
     if (!userId && !groupId) {
       // Visitante novo: salva e entrega INITIAL_TODOS
       storage.setItem(key, JSON.stringify(INITIAL_TODOS));
+      storage.setItem('apptodo_guest_demo_snapshot', JSON.stringify(INITIAL_TODOS));
       return { todos: INITIAL_TODOS, isFirstAccess: true };
     }
     // Conta ou grupo sem cache local: retorna vazio
@@ -170,21 +162,17 @@ export function saveContextTodos(
   customStorage?: StorageLike
 ): void {
   const storage = getSafeStorage(customStorage);
-  if (!storage) return;
+  if (!storage) throw new Error('Armazenamento local indisponível. Libere o acesso para salvar suas tarefas.');
 
   const key = getStorageKey(userId, groupId);
   try {
     storage.setItem(key, JSON.stringify(todos));
   } catch (err) {
-    console.error(`Erro ao salvar tarefas na chave ${key}:`, err);
+    throw new Error('Não foi possível salvar neste dispositivo. Verifique o espaço disponível.', { cause: err });
   }
 }
 
-export interface SupabaseTaskClient {
-  from(table: string): {
-    insert(payload: unknown): Promise<{ error: unknown }>;
-  };
-}
+export type SupabaseTaskClient = import('./taskPersistence').TaskTransport;
 
 export interface MigrationResult {
   success: boolean;
@@ -192,126 +180,49 @@ export interface MigrationResult {
   error?: string;
 }
 
-/**
- * Executa a migração segura das tarefas locais do visitante para a nuvem do usuário autenticado.
- * - Cria um backup recuperável ('apptodo_migration_backup_<userId>').
- * - Só considera concluído após confirmação de sucesso de todas as inserções.
- * - Em caso de falha, mantém a cópia intacta e retorna os dados originais para que o usuário não perca nada.
- * - Em caso de sucesso, retorna a lista migrada para que o estado da tela seja populado com ela.
- */
+/** Copies guest tasks into a durable personal outbox before releasing the guest space. */
 export async function migrateGuestTasksToCloud(
-  userId: string,
-  supabaseClient: SupabaseTaskClient,
-  customStorage?: StorageLike
+  userId: string, client: SupabaseTaskClient, customStorage?: StorageLike,
 ): Promise<MigrationResult> {
   const storage = getSafeStorage(customStorage);
-  if (!storage) {
-    return { success: false, migratedTasks: [] };
-  }
-
-  const guestRaw = storage.getItem(GUEST_STORAGE_KEY);
-  if (!guestRaw) {
-    return { success: true, migratedTasks: [] };
-  }
-
-  let guestTasks: TodoItem[] = [];
+  if (!storage) return { success: false, migratedTasks: [], error: 'Armazenamento indisponível.' };
+  let tasks: TodoItem[] = [];
   try {
-    const parsed = JSON.parse(guestRaw);
-    if (Array.isArray(parsed)) {
-      guestTasks = parsed;
-    }
-  } catch {
-    return { success: false, migratedTasks: [], error: 'JSON inválido no armazenamento local' };
+    const raw = storage.getItem(GUEST_STORAGE_KEY);
+    if (!raw) return { success: true, migratedTasks: [] };
+    tasks = JSON.parse(raw);
+    if (!Array.isArray(tasks)) throw new Error('Backup local inválido.');
+    if (!tasks.length || isOnlyDemoTasks(tasks) || raw === storage.getItem('apptodo_guest_demo_snapshot')) return { success: true, migratedTasks: [] };
+    const ownerKey = 'apptodo_guest_migration_owner';
+    const owner = storage.getItem(ownerKey);
+    if (owner && owner !== userId) return { success: false, migratedTasks: [], error: 'Há uma migração pendente em outra conta.' };
+    storage.setItem(ownerKey, userId);
+    storage.setItem(`apptodo_migration_backup_${userId}`, raw);
+    const { stageTaskChanges, flushTaskChanges } = await import('./taskPersistence');
+    const cache = loadContextTodos(userId, null, storage).todos;
+    const ids = new Set(cache.map(task => task.id));
+    const mapKey = `apptodo_guest_migration_ids_${userId}`;
+    const idMap: Record<string, string> = JSON.parse(storage.getItem(mapKey) || '{}');
+    const mapped = tasks.map(task => {
+      idMap[task.id] ||= crypto.randomUUID();
+      return { ...task, id: idMap[task.id], groupId: undefined, syncState: 'local_only' as const,
+        subTasks: task.subTasks.map(st => {
+          const key = `${task.id}:sub:${st.id}`;
+          idMap[key] ||= crypto.randomUUID();
+          return { ...st, id: idMap[key] };
+        }) };
+    });
+    storage.setItem(mapKey, JSON.stringify(idMap));
+    const incoming = mapped.filter(task => !ids.has(task.id));
+    stageTaskChanges(userId, null, [...cache, ...incoming], incoming, [], storage);
+    await flushTaskChanges(client, userId, null, storage);
+    if (storage.getItem(GUEST_STORAGE_KEY) === raw) storage.setItem(GUEST_STORAGE_KEY, '[]');
+    storage.removeItem?.(ownerKey);
+    storage.removeItem?.(mapKey);
+    return { success: true, migratedTasks: tasks };
+  } catch (error) {
+    return { success: false, migratedTasks: tasks, error: error instanceof Error ? error.message : String(error) };
   }
-
-  // Se não há tarefas ou são apenas as tarefas de demonstração padrão, não migra lixo para a nuvem
-  if (guestTasks.length === 0 || isOnlyDemoTasks(guestTasks)) {
-    return { success: true, migratedTasks: [] };
-  }
-
-  // 1. Cria backup de recuperação ANTES de qualquer chamada de rede
-  const backupKey = `apptodo_migration_backup_${userId}`;
-  storage.setItem(backupKey, JSON.stringify(guestTasks));
-
-  // 2. Insere tarefas e subtarefas no Supabase com validação individual
-  const successfullyInserted: TodoItem[] = [];
-
-  for (const item of guestTasks) {
-    try {
-      const { error: taskErr } = await supabaseClient.from('tasks').insert({
-        id: item.id,
-        user_id: userId,
-        title: item.title,
-        description: item.description || null,
-        completed: item.completed,
-        status: item.status || 'todo',
-        priority: item.priority,
-        category: item.category,
-        due_date: item.dueDate || null,
-        due_time: item.dueTime || null,
-        pinned: item.pinned,
-        pomodoros: item.pomodoros || 0,
-        order_index: item.order || 0,
-        created_at: item.createdAt,
-        completed_at: item.completedAt || null,
-        group_id: null,
-      });
-
-      if (taskErr) {
-        console.error('Falha ao inserir tarefa durante migração:', taskErr);
-        // Falha detectada: preserva cópia de segurança e não descarta nada
-        return {
-          success: false,
-          migratedTasks: guestTasks,
-          error: 'Falha na inserção da tarefa no banco de dados',
-        };
-      }
-
-      if (item.subTasks && item.subTasks.length > 0) {
-        const { error: subErr } = await supabaseClient.from('subtasks').insert(
-          item.subTasks.map((s) => ({
-            id: s.id,
-            task_id: item.id,
-            title: s.title,
-            completed: s.completed,
-          }))
-        );
-
-        if (subErr) {
-          console.error('Falha ao inserir subtarefas durante migração:', subErr);
-          return {
-            success: false,
-            migratedTasks: guestTasks,
-            error: 'Falha na inserção de subtarefa no banco de dados',
-          };
-        }
-      }
-
-      successfullyInserted.push(item);
-    } catch (err) {
-      console.error('Erro de rede ou exceção durante migração:', err);
-      return {
-        success: false,
-        migratedTasks: guestTasks,
-        error: String(err),
-      };
-    }
-  }
-
-  // 3. Sucesso confirmado de todas as tarefas:
-  // Salva no cache pessoal do usuário
-  saveContextTodos(userId, null, successfullyInserted, storage);
-
-  // Limpa o espaço de visitante para que um futuro logout encontre um espaço novo
-  storage.setItem(GUEST_STORAGE_KEY, JSON.stringify([]));
-
-  // Marca status da migração
-  storage.setItem(`apptodo_migrated_${userId}`, 'true');
-
-  return {
-    success: true,
-    migratedTasks: successfullyInserted,
-  };
 }
 
 /**
@@ -361,7 +272,7 @@ export function restoreTodoInContext(
   task: TodoItem,
   index?: number
 ): TodoItem[] {
-  const updated = [...todos];
+  const updated = todos.filter(item => item.id !== task.id);
   const insertIndex =
     typeof index === 'number' && index >= 0 && index <= updated.length
       ? index
@@ -380,23 +291,11 @@ export function prepareDemoTodos(
   mode: 'replace' | 'append',
   groupId?: string | null
 ): TodoItem[] {
-  if (mode === 'append') {
-    const demoItems: TodoItem[] = INITIAL_TODOS.map((d, idx) => ({
-      ...d,
-      id: `demo-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-      groupId: groupId || undefined,
-      subTasks: d.subTasks.map((st, sidx) => ({
-        ...st,
-        id: `sub-demo-${Date.now()}-${idx}-${sidx}`,
-      })),
-    }));
-    return [...existingTodos, ...demoItems];
-  }
-
-  return INITIAL_TODOS.map((d) => ({
-    ...d,
-    groupId: groupId || undefined,
+  const items = INITIAL_TODOS.map(d => ({
+    ...d, id: crypto.randomUUID(), groupId: groupId || undefined,
+    subTasks: d.subTasks.map(st => ({ ...st, id: crypto.randomUUID() })),
   }));
+  return mode === 'append' ? [...existingTodos, ...items] : items;
 }
 
 /**
@@ -453,12 +352,12 @@ export function saveSyncQueue(
   customStorage?: StorageLike
 ): void {
   const storage = getSafeStorage(customStorage);
-  if (!storage) return;
+  if (!storage) throw new Error('Armazenamento local indisponível para salvar alterações pendentes.');
   const key = getSyncQueueKey(userId, groupId);
   try {
     storage.setItem(key, JSON.stringify(queue));
   } catch (err) {
-    console.error('Falha ao salvar fila de sincronização:', err);
+    throw new Error('Não foi possível preservar a fila de alterações.', { cause: err });
   }
 }
 
@@ -515,7 +414,7 @@ export function dequeueSyncItem(
  * Política explícita de resolução de conflitos:
  * 1. Se a tarefa possui alteração pendente local (offline/não sincronizada), as alterações
  *    locais são preservadas para evitar descarte silencioso de edições do usuário.
- * 2. Se não houver alteração pendente local, aplica Last-Write-Wins (LWW) comparando timestamps.
+ * 2. Sem alteração pendente, usa a versão confirmada pelo servidor.
  */
 export function resolveTaskConflict(
   localTask: TodoItem,
@@ -529,20 +428,9 @@ export function resolveTaskConflict(
     };
   }
 
-  const localTime = new Date(localTask.updatedAt || localTask.completedAt || localTask.createdAt).getTime();
-  const remoteTime = new Date(remoteTask.updatedAt || remoteTask.completedAt || remoteTask.createdAt).getTime();
-
-  if (remoteTime >= localTime) {
-    return {
-      ...remoteTask,
-      syncState: 'synced',
-    };
-  }
-
-  return {
-    ...localTask,
-    syncState: 'synced',
-  };
+  // Once the outbox is empty, the server is authoritative. Device clock skew
+  // must not permanently mask a teammate's newer server commit.
+  return { ...remoteTask, syncState: 'synced' };
 }
 
 /**
@@ -597,108 +485,24 @@ export function mergeCloudTasksWithLocal(
     }
   }
 
+  for (const op of pendingUpsertMap.values()) {
+    if (op.task && !pendingDeleteSet.has(op.taskId)) {
+      resultMap.set(op.taskId, { ...op.task, syncState: 'local_only' });
+    }
+  }
   return Array.from(resultMap.values());
 }
 
-export interface SupabaseClientWithErrors {
-  from(table: string): {
-    select(columns?: string): {
-      eq(col: string, val: unknown): Promise<{ data: unknown; error: unknown }>;
-      [key: string]: unknown;
-    };
-    insert(payload: unknown): Promise<{ data?: unknown; error: unknown }>;
-    upsert(payload: unknown): Promise<{ data?: unknown; error: unknown }>;
-    update(payload: unknown): {
-      eq(col: string, val: unknown): Promise<{ data?: unknown; error: unknown }>;
-    };
-    delete(): {
-      eq(col: string, val: unknown): {
-        eq?(col: string, val: unknown): Promise<{ data?: unknown; error: unknown }>;
-        is?(col: string, val: unknown): Promise<{ data?: unknown; error: unknown }>;
-        then(resolve: (value: { error: unknown }) => void): void;
-      };
-      is?(col: string, val: unknown): Promise<{ data?: unknown; error: unknown }>;
-    };
-  };
-}
+export type SupabaseClientWithErrors = import('./taskPersistence').TaskTransport;
 
-/**
- * Executa a sincronização segura de um item pendente da fila no Supabase.
- * Valida de forma estrita o campo { error } retornado pelo cliente.
- */
 export async function syncPendingItemToCloud(
-  item: PendingSyncItem,
-  userId: string,
-  groupId: string | null,
-  client: SupabaseClientWithErrors
+  item: PendingSyncItem, userId: string, groupId: string | null, client: SupabaseClientWithErrors,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    if (item.action === 'delete') {
-      const { error } = await client.from('tasks').delete().eq('id', item.taskId);
-      if (error) {
-        const msg = typeof error === 'object' && error !== null && 'message' in error
-          ? String((error as { message: unknown }).message)
-          : 'Falha ao excluir no banco de dados';
-        return { success: false, error: msg };
-      }
-      return { success: true };
-    }
-
-    if (item.action === 'upsert' && item.task) {
-      const t = item.task;
-      const { error: taskErr } = await client.from('tasks').upsert({
-        id: t.id,
-        user_id: userId,
-        title: t.title,
-        description: t.description || null,
-        completed: t.completed,
-        status: t.status || 'todo',
-        priority: t.priority,
-        category: t.category,
-        due_date: t.dueDate || null,
-        due_time: t.dueTime || null,
-        pinned: t.pinned,
-        pomodoros: t.pomodoros || 0,
-        order_index: t.order || 0,
-        created_at: t.createdAt,
-        completed_at: t.completedAt || null,
-        group_id: groupId || null,
-      });
-
-      if (taskErr) {
-        const msg = typeof taskErr === 'object' && taskErr !== null && 'message' in taskErr
-          ? String((taskErr as { message: unknown }).message)
-          : 'Falha ao salvar tarefa no banco de dados';
-        return { success: false, error: msg };
-      }
-
-      if (t.subTasks && t.subTasks.length > 0) {
-        for (const st of t.subTasks) {
-          const { error: subErr } = await client.from('subtasks').upsert({
-            id: st.id,
-            task_id: t.id,
-            title: st.title,
-            completed: st.completed,
-          });
-          if (subErr) {
-            const msg = typeof subErr === 'object' && subErr !== null && 'message' in subErr
-              ? String((subErr as { message: unknown }).message)
-              : 'Falha ao salvar subtarefa no banco de dados';
-            return { success: false, error: msg };
-          }
-        }
-      }
-
-      return { success: true };
-    }
-
+    const { sendTaskChanges } = await import('./taskPersistence');
+    await sendTaskChanges(client, userId, groupId, [item]);
     return { success: true };
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
-
-

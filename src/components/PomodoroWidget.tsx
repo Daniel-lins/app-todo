@@ -39,7 +39,7 @@ export const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({
   return (
     <aside
       aria-label="Controle compacto do Pomodoro"
-      className="fixed bottom-14 md:bottom-0 left-0 md:left-60 right-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 sm:px-6 py-2.5 sm:py-3 shadow-lg md:shadow-none animate-in fade-in slide-in-from-bottom-2 duration-200"
+      className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] md:bottom-0 left-0 md:left-60 right-0 z-30 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border-t border-zinc-200/80 dark:border-zinc-800 px-4 sm:px-6 py-2.5 sm:py-3 shadow-lg md:shadow-none animate-in fade-in slide-in-from-bottom-2 duration-200"
     >
       <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
         {/* Lado Esquerdo: Indicador "EM FOCO" + Nome da tarefa vinculada */}

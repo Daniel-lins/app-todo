@@ -55,6 +55,8 @@ export function useAccessibleModal({
   closeOnEscape = true,
 }: UseAccessibleModalOptions) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -84,7 +86,7 @@ export function useAccessibleModal({
       if (closeOnEscape && e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        closeRef.current();
         return;
       }
 
@@ -137,7 +139,7 @@ export function useAccessibleModal({
         }, 50);
       }
     };
-  }, [isOpen, onClose, initialFocusRef, returnFocusRef, closeOnEscape]);
+  }, [isOpen, initialFocusRef, returnFocusRef, closeOnEscape]);
 
   return { modalRef };
 }

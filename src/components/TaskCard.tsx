@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { 
   Check, 
   Trash2, 
@@ -81,6 +81,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [newSubTaskTitle, setNewSubTaskTitle] = useState('');
   const [isAddingSub, setIsAddingSub] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const focusMenu = useCallback((node: HTMLDivElement | null) => {
+    node?.querySelector<HTMLButtonElement>('button')?.focus();
+  }, []);
 
   const categoryMeta = CATEGORIES[task.category] || CATEGORIES.other;
   const priorityMeta = PRIORITIES[task.priority] || PRIORITIES.medium;
@@ -149,7 +153,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         isPomodoroActiveTask
           ? 'border-l-[3.5px] border-l-[#5b4fe9] bg-[#5b4fe9]/[0.03] dark:bg-[#5b4fe9]/[0.06]'
           : ''
-      } ${task.completed ? 'opacity-75' : ''}`}
+      } `}
     >
       <div className="flex items-start gap-3.5">
         {/* Checkbox circular */}
@@ -159,7 +163,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           aria-checked={task.completed}
           onClick={handleToggle}
           aria-label={task.completed ? `Marcar "${task.title}" como pendente` : `Marcar "${task.title}" como concluída`}
-          className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#5b4fe9] focus:ring-offset-2 ${
+          className={`relative before:absolute before:inset-[-12px] mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#5b4fe9] focus:ring-offset-2 ${
             task.completed
               ? 'bg-[#5b4fe9] text-white shadow-sm shadow-[#5b4fe9]/30'
               : 'border-[1.5px] border-zinc-300 dark:border-zinc-600 hover:border-[#5b4fe9] dark:hover:border-[#5b4fe9] bg-white dark:bg-zinc-900'
@@ -175,7 +179,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             <h3
               className={`text-[15px] sm:text-base font-semibold leading-snug break-words transition-colors ${
                 task.completed
-                  ? 'line-through text-zinc-400 dark:text-zinc-500 font-normal'
+                  ? 'line-through text-zinc-600 dark:text-zinc-400 font-normal'
                   : 'text-zinc-900 dark:text-zinc-100'
               }`}
             >
@@ -187,7 +191,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
             {/* Right side items: Priority flag + 3-dots menu button */}
             <div className="flex items-center gap-2.5 shrink-0 pt-0.5">
-              {renderPriority()}
+              <span className="hidden sm:inline-flex">{renderPriority()}</span>
 
               {/* 3-dots Menu Button */}
               <div className="relative">
@@ -197,9 +201,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                     e.stopPropagation();
                     setIsMenuOpen(!isMenuOpen);
                   }}
+                  ref={menuButtonRef}
                   aria-expanded={isMenuOpen}
                   aria-label={`Mais opções da tarefa "${task.title}"`}
-                  className="p-1 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus:outline-none focus:ring-2 focus:ring-[#5b4fe9]"
+                  className="p-1 min-w-11 min-h-11 -my-2 flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus:outline-none focus:ring-2 focus:ring-[#5b4fe9]"
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -211,6 +216,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                       onClick={() => setIsMenuOpen(false)} 
                     />
                     <div 
+                      ref={focusMenu}
+                      onKeyDown={event => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault(); event.stopPropagation(); setIsMenuOpen(false); menuButtonRef.current?.focus();
+                        } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                          event.preventDefault();
+                          const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+                          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+                          const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+                            : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                          items[next]?.focus();
+                        }
+                      }}
                       role="menu"
                       aria-label="Ações da tarefa"
                       className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-40 p-1 space-y-0.5 animate-in fade-in zoom-in-95 duration-100"
@@ -338,7 +356,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             <p
               className={`mt-1 text-xs sm:text-sm leading-relaxed break-words line-clamp-2 ${
                 task.completed
-                  ? 'text-zinc-400/80 dark:text-zinc-600'
+                  ? 'text-zinc-600 dark:text-zinc-400'
                   : 'text-zinc-500 dark:text-zinc-400'
               }`}
             >
@@ -348,6 +366,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
           {/* Metadata line: Category / Group • Due date • Subtasks • Sync */}
           <div className="mt-1.5 flex items-center gap-2.5 flex-wrap text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="sm:hidden">{renderPriority()}</span>
             {/* Group or Category */}
             {groupName ? (
               <span className="inline-flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300 font-medium">

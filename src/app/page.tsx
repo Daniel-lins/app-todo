@@ -13,7 +13,8 @@ import {
   ChevronDown, 
   ChevronRight, 
   Kanban as KanbanIcon, 
-  RotateCcw
+  RotateCcw,
+  Settings
 } from 'lucide-react';
 import { useTodos } from '../hooks/useTodos';
 import { usePomodoro } from '../hooks/usePomodoro';
@@ -29,7 +30,7 @@ import { SettingsModal } from '../components/SettingsModal';
 import { AuthModal } from '../components/AuthModal';
 import type { ConfirmModalProps } from '../components/ConfirmModal';
 import { AVATAR_PRESETS, CATEGORIES, PRIORITIES } from '../utils/todoConstants';
-import { isTodayLocal } from '../utils/dateUtils';
+import { getLocalDateString } from '../utils/dateUtils';
 import { 
   checkDeadlinesAndNotify,
   getNotificationStatus,
@@ -66,8 +67,11 @@ export default function Home() {
   const {
     todos,
     filteredTodos,
+    isLoaded,
+    contextId,
+    todayDateStr,
+    syncError,
     user,
-    stats,
     viewMode,
     setViewMode,
     filterStatus,
@@ -91,6 +95,7 @@ export default function Home() {
     moveTaskStatus,
     incrementPomodoro,
     importTodos,
+    getPreviousBackup,
     profile,
     updateProfile,
     groups,
@@ -132,6 +137,8 @@ export default function Home() {
   // Pomodoro timer desacoplado
   const pomodoro = usePomodoro({
     todos,
+    isLoaded,
+    contextId,
     onSessionComplete: incrementPomodoro,
   });
 
@@ -161,7 +168,7 @@ export default function Home() {
   // Formatação de data em português: "Quinta-feira, 24 de setembro"
   const formattedToday = useMemo(() => {
     try {
-      const now = new Date();
+      const now = new Date(`${todayDateStr}T12:00:00`);
       const str = new Intl.DateTimeFormat('pt-BR', {
         weekday: 'long',
         day: 'numeric',
@@ -171,7 +178,7 @@ export default function Home() {
     } catch {
       return 'Hoje';
     }
-  }, []);
+  }, [todayDateStr]);
 
   const handleOpenCreate = () => {
     setEditingTask(null);
@@ -209,7 +216,7 @@ export default function Home() {
         category: 'other',
         subTasks: [],
         groupId: currentGroupId || undefined,
-        dueDate: filterStatus === 'today' ? new Date().toISOString().split('T')[0] : undefined,
+        dueDate: filterStatus === 'today' ? getLocalDateString() : undefined,
       });
       setQuickTitle('');
     } catch (err) {
@@ -282,7 +289,7 @@ export default function Home() {
         handleOpenCreate();
       } else if (e.key === '/') {
         e.preventDefault();
-        const searchInput = document.querySelector('input[data-search-input]') as HTMLInputElement;
+        const searchInput = Array.from(document.querySelectorAll<HTMLInputElement>('input[data-search-input]')).find(input => input.offsetParent !== null);
         if (searchInput) {
           searchInput.focus();
           searchInput.select();
@@ -372,13 +379,13 @@ export default function Home() {
   };
 
   const todayTasksCount = useMemo(() => {
-    return todos.filter((t) => !t.completed && isTodayLocal(t.dueDate)).length;
-  }, [todos]);
+    return todos.filter((t) => !t.completed && t.dueDate === todayDateStr).length;
+  }, [todos, todayDateStr]);
 
   // Contagem para o espaço e período exibidos
-  const displayedTotal = stats.total;
-  const displayedCompleted = stats.completed;
-  const progressPercent = stats.rate;
+  const displayedTotal = filteredTodos.length;
+  const displayedCompleted = filteredTodos.filter(task => task.completed).length;
+  const progressPercent = displayedTotal ? Math.round(displayedCompleted / displayedTotal * 100) : 0;
 
   return (
     <div className="min-h-screen bg-[#fbfbfb] dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col md:flex-row antialiased selection:bg-[#ede9fe] selection:text-[#5b4fe9]">
@@ -392,6 +399,7 @@ export default function Home() {
         currentGroupId={currentGroupId}
         onSelectGroup={(groupId) => {
           setCurrentGroupId(groupId);
+          setFilterStatus('all');
         }}
         onOpenCreateGroup={() => setIsGroupsOpen(true)}
         todayCount={todayTasksCount}
@@ -403,7 +411,7 @@ export default function Home() {
       />
 
       {/* 2. Área Principal à direita */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-32 md:pb-24">
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen pb-[calc(9rem+env(safe-area-inset-bottom))] md:pb-24">
         {/* Cabeçalho superior compacto (Desktop) */}
         <header className="hidden md:flex items-center justify-between px-8 py-3.5 border-b border-zinc-200/80 dark:border-zinc-800 bg-[#fbfbfb]/80 dark:bg-zinc-950/80 backdrop-blur-sm sticky top-0 z-10">
           {/* Breadcrumb: < Meu espaço / Hoje */}
@@ -471,7 +479,7 @@ export default function Home() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span>Sincronizado</span>
                 </span>
-              ) : syncStatus === 'local_only' || pendingSyncCount > 0 ? (
+              ) : syncStatus !== 'error' && (syncStatus === 'local_only' || pendingSyncCount > 0) ? (
                 <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
                   <span>Salvo localmente ({pendingSyncCount})</span>
@@ -529,6 +537,10 @@ export default function Home() {
               <span className="w-2 h-2 rounded-full bg-amber-500" title="Salvo localmente" />
             )}
 
+            <button type="button" aria-label="Abrir configurações" onClick={() => setIsSettingsOpen(true)}
+              className="w-11 h-11 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+              <Settings className="w-5 h-5" />
+            </button>
             {/* Avatar mobile */}
             <button
               type="button"
@@ -549,6 +561,20 @@ export default function Home() {
 
         {/* Conteúdo Central */}
         <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 flex flex-col">
+          {(syncError || pomodoro.timerError) && (
+            <div role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+              <p>{syncError || pomodoro.timerError}</p>
+              {pendingSyncCount > 0 && <p className="mt-1">{pendingSyncCount} alterações salvas neste dispositivo aguardam envio.</p>}
+              {user && <button type="button" onClick={() => void retrySync()} className="mt-2 min-h-11 font-semibold underline">Tentar sincronizar novamente</button>}
+            </div>
+          )}
+          <div className="md:hidden relative mb-5">
+            <Search className="absolute left-3 top-3.5 h-4 w-4 text-zinc-500" />
+            <input type="search" data-search-input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              aria-label="Buscar tarefas no celular" placeholder="Buscar tarefas"
+              className="w-full min-h-11 rounded-lg border border-zinc-200 bg-white pl-10 pr-3 text-sm dark:border-zinc-800 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#5b4fe9]" />
+          </div>
+          {!isLoaded && <p role="status" className="mb-4 text-sm text-zinc-500">Carregando suas tarefas…</p>}
           {/* Título Principal + Data + Botão "+ Nova tarefa" */}
           <div className="flex items-start justify-between gap-4 mb-3">
             <div>
@@ -564,6 +590,7 @@ export default function Home() {
             <button
               type="button"
               onClick={handleOpenCreate}
+              disabled={!isLoaded}
               className="bg-[#5b4fe9] hover:bg-[#4d40d9] text-white text-xs sm:text-sm font-semibold px-4 py-2 sm:py-2.5 rounded-xl shadow-xs transition-all duration-150 flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-[#5b4fe9] focus:ring-offset-2 active:scale-98 shrink-0"
             >
               <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -642,6 +669,7 @@ export default function Home() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-500 font-medium">Categoria:</span>
                   <select
+                    aria-label="Filtrar por categoria"
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value as Category | 'all')}
                     className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
@@ -659,6 +687,7 @@ export default function Home() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-500 font-medium">Prioridade:</span>
                   <select
+                    aria-label="Filtrar por prioridade"
                     value={filterPriority}
                     onChange={(e) => setFilterPriority(e.target.value as Priority | 'all')}
                     className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
@@ -676,13 +705,14 @@ export default function Home() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-zinc-500 font-medium">Ordenar:</span>
                   <select
+                    aria-label="Ordenar tarefas"
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortOption)}
                     className="text-xs py-1 px-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-[#5b4fe9]"
                   >
-                    <option value="created_desc">Mais recentes</option>
-                    <option value="due_date">Prazo mais próximo</option>
-                    <option value="priority">Prioridade alta</option>
+                    <option value="createdAt_desc">Mais recentes</option>
+                    <option value="dueDate_asc">Prazo mais próximo</option>
+                    <option value="priority_desc">Prioridade alta</option>
                     <option value="alphabetical">Alfabética</option>
                   </select>
                 </div>
@@ -718,7 +748,8 @@ export default function Home() {
               onChange={(e) => setQuickTitle(e.target.value)}
               placeholder="Adicionar uma tarefa..."
               aria-label="Adicionar uma tarefa rapidamente"
-              className="flex-1 py-3 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none"
+              disabled={!isLoaded}
+              className="flex-1 min-w-0 py-3 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none"
             />
             {quickTitle.trim() && (
               <div className="pr-3 flex items-center gap-1.5">
@@ -765,7 +796,7 @@ export default function Home() {
                     </p>
                   </div>
                 ) : (
-                  <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
+                  <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-visible divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
                     {activeTasks.map((task) => (
                       <TaskCard
                         key={task.id}
@@ -805,7 +836,7 @@ export default function Home() {
                   </button>
 
                   {isCompletedSectionOpen && (
-                    <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-hidden divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
+                    <div className="bg-white dark:bg-zinc-900/60 rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 overflow-visible divide-y divide-zinc-100 dark:divide-zinc-800/80 shadow-xs">
                       {completedTasks.map((task) => (
                         <TaskCard
                           key={task.id}
@@ -912,6 +943,7 @@ export default function Home() {
         todos={todos}
         spaceName={currentSpaceName}
         onImport={importTodos}
+        getPreviousBackup={getPreviousBackup}
       />
 
       <ShortcutsModal

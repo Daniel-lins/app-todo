@@ -153,7 +153,7 @@ function ResetPasswordContent() {
 
     try {
       const { error } = await supabase.auth.updateUser({
-        password: password.trim(),
+        password: password,
       });
 
       if (error) {

@@ -219,10 +219,10 @@ export function syncPomodoroWithTasks(
 /**
  * Salva a sessão no localStorage com tratamento de exceções.
  */
-export function savePomodoroState(session: PomodoroSession): void {
+export function savePomodoroState(session: PomodoroSession, storageKey = POMODORO_STORAGE_KEY): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(storageKey, JSON.stringify(session));
   } catch (err) {
     console.error('Failed to save Pomodoro state to localStorage', err);
   }
@@ -233,7 +233,9 @@ export function savePomodoroState(session: PomodoroSession): void {
  */
 export function loadPomodoroState(
   todos: TodoItem[] = [],
-  now: number = Date.now()
+  now: number = Date.now(),
+  storageKey = POMODORO_STORAGE_KEY,
+  persistCompletion = true
 ): {
   session: PomodoroSession;
   completedDuringReload: boolean;
@@ -243,7 +245,7 @@ export function loadPomodoroState(
   }
 
   try {
-    const raw = localStorage.getItem(POMODORO_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) {
       return { session: createInitialPomodoroSession(), completedDuringReload: false };
     }
@@ -254,7 +256,7 @@ export function loadPomodoroState(
     // Se estava rodando, reconcilia com o tempo decorrido enquanto a página estava fechada/recarregando
     if (synced.isRunning && synced.targetEndTime) {
       const { session: updated, completedNow } = tickPomodoroTimer(synced, now);
-      savePomodoroState(updated);
+      if (persistCompletion) savePomodoroState(updated, storageKey);
       return { session: updated, completedDuringReload: completedNow };
     }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { 
   TodoItem, 
   FilterStatus, 
@@ -12,12 +12,14 @@ import {
 } from '../types/todo';
 import { 
   getLocalDateString, 
-  isTodayLocal, 
   getMsUntilNextMidnight 
 } from '../utils/dateUtils';
 import { calculateTaskStats } from '../utils/taskDomain';
 
+const subscribeHydration = () => () => {};
+
 export function useTaskFilters(todos: TodoItem[]) {
+  const isClient = useSyncExternalStore(subscribeHydration, () => true, () => false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('today');
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all');
@@ -38,17 +40,17 @@ export function useTaskFilters(todos: TodoItem[]) {
     return 'list';
   });
 
-  const setViewMode = (mode: ViewMode) => {
+  const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeState(mode);
     try {
       localStorage.setItem('apptodo_view_mode', mode);
     } catch {
       // Ignora
     }
-  };
+  }, []);
 
   // Rastreia a data local e recomputa tarefas do dia automaticamente na virada da meia-noite
-  const [, setTodayDateStr] = useState(() => getLocalDateString());
+  const [todayDateStr, setTodayDateStr] = useState(() => getLocalDateString());
 
   useEffect(() => {
     let timerId: NodeJS.Timeout;
@@ -62,8 +64,9 @@ export function useTaskFilters(todos: TodoItem[]) {
     };
 
     scheduleNextMidnightCheck();
-
-    return () => clearTimeout(timerId);
+    const refreshDate = () => setTodayDateStr(getLocalDateString());
+    window.addEventListener('focus', refreshDate);
+    return () => { clearTimeout(timerId); window.removeEventListener('focus', refreshDate); };
   }, []);
 
   // Centralização das regras de filtragem e ordenação compartilhadas entre Lista e Kanban
@@ -75,7 +78,7 @@ export function useTaskFilters(todos: TodoItem[]) {
         if (filterStatus === 'completed' && !task.completed) return false;
         if (filterStatus === 'pinned' && !task.pinned) return false;
         if (filterStatus === 'today') {
-          if (!isTodayLocal(task.dueDate)) return false;
+          if (task.dueDate !== todayDateStr) return false;
         }
 
         // Category filter
@@ -102,10 +105,12 @@ export function useTaskFilters(todos: TodoItem[]) {
           case 'createdAt_desc':
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           case 'dueDate_asc':
+            if (!a.dueDate && !b.dueDate) return 0;
             if (!a.dueDate) return 1;
             if (!b.dueDate) return -1;
             return a.dueDate.localeCompare(b.dueDate);
           case 'dueDate_desc':
+            if (!a.dueDate && !b.dueDate) return 0;
             if (!a.dueDate) return 1;
             if (!b.dueDate) return -1;
             return b.dueDate.localeCompare(a.dueDate);
@@ -119,12 +124,12 @@ export function useTaskFilters(todos: TodoItem[]) {
             return 0;
         }
       });
-  }, [todos, filterStatus, filterCategory, filterPriority, searchQuery, sortBy]);
+  }, [todos, filterStatus, filterCategory, filterPriority, searchQuery, sortBy, todayDateStr]);
 
   // Estatísticas calculadas de forma determinística
   const stats: TaskStats = useMemo(() => {
-    return calculateTaskStats(todos);
-  }, [todos]);
+    return calculateTaskStats(todos, new Date(`${todayDateStr}T12:00:00`));
+  }, [todos, todayDateStr]);
 
   return {
     filterStatus,
@@ -137,9 +142,10 @@ export function useTaskFilters(todos: TodoItem[]) {
     setSearchQuery,
     sortBy,
     setSortBy,
-    viewMode,
+    viewMode: isClient ? viewMode : 'list' as ViewMode,
     setViewMode,
     filteredTodos,
     stats,
+    todayDateStr,
   };
 }

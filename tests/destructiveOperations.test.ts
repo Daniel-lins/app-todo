@@ -274,7 +274,8 @@ describe('Operações Destrutivas Seguras e Recuperação de Dados', () => {
     const result = prepareImportTodos(activeGroupTodos, importedBackup, 'replace', 'marketing');
 
     assert.equal(result.length, 1);
-    assert.equal(result[0].id, 'imp-1');
+    assert.notEqual(result[0].id, 'imp-1');
+    assert.match(result[0].id, /^[0-9a-f-]{36}$/);
     assert.equal(result[0].groupId, 'marketing', 'Tarefas importadas no grupo devem receber o groupId do espaço');
   });
 

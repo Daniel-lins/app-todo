@@ -31,7 +31,8 @@ interface BackupModalProps {
   onClose: () => void;
   todos: TodoItem[];
   spaceName: string;
-  onImport: (imported: TodoItem[], mode: 'replace' | 'merge') => Promise<void> | void;
+  getPreviousBackup: () => TodoItem[] | null;
+  onImport: (imported: TodoItem[], mode: 'replace' | 'merge') => Promise<{ synced: boolean; localOnly: boolean }>;
 }
 
 export const BackupModal: React.FC<BackupModalProps> = ({
@@ -39,6 +40,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
   onClose,
   todos,
   spaceName,
+  getPreviousBackup,
   onImport,
 }) => {
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
@@ -59,9 +61,9 @@ export const BackupModal: React.FC<BackupModalProps> = ({
   if (!isOpen) return null;
 
   // Exportação com formato versionado (V2), livre de credenciais e tokens
-  const handleExport = () => {
+  const handleExport = (items: TodoItem[] = todos) => {
     try {
-      const dataStr = generateBackupData(todos, spaceName);
+      const dataStr = generateBackupData(items, spaceName);
       const blob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const dateStr = new Date().toISOString().split('T')[0];
@@ -72,7 +74,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setSuccessMsg(`Backup de ${todos.length} tarefas exportado com sucesso no formato V2!`);
+      setSuccessMsg(`Backup de ${items.length} tarefas exportado com sucesso no formato V2!`);
       setTimeout(() => setSuccessMsg(null), 3500);
     } catch {
       setError('Erro ao gerar arquivo de exportação.');
@@ -152,18 +154,15 @@ export const BackupModal: React.FC<BackupModalProps> = ({
     setError(null);
     try {
       // Aguarda estritamente a conclusão da persistência (local e nuvem)
-      await onImport(validationResult.todos, importMode);
+      const result = await onImport(validationResult.todos, importMode);
       setSuccessMsg(
-        `${validationResult.totalTasks} tarefas ${importMode === 'replace' ? 'substituídas' : 'mescladas'} com sucesso em ${spaceName}!`
+        `${validationResult.totalTasks} tarefas ${importMode === 'replace' ? 'substituídas' : 'mescladas'} em ${spaceName}. ${result.localOnly ? 'Salvas neste dispositivo.' : result.synced ? 'Sincronizadas com a nuvem.' : 'Salvas neste dispositivo; sincronização pendente.'}`
       );
       handleResetFile();
-      setTimeout(() => {
-        setSuccessMsg(null);
-        onClose();
-      }, 1400);
+      if (result.synced) setTimeout(() => { setSuccessMsg(null); onClose(); }, 2500);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao sincronizar dados do backup.';
-      setError(`Erro durante a importação: ${msg}. Os dados anteriores foram preservados.`);
+      setError(`Erro durante a importação: ${msg}. A cópia anterior está preservada neste dispositivo.`);
       // NUNCA exibe mensagem de sucesso se ocorrer falha!
     } finally {
       setIsProcessing(false);
@@ -244,7 +243,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={handleExport}
+                onClick={() => handleExport()}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 transition-all hover:scale-105 active:scale-95 shrink-0"
               >
                 <Download className="w-4 h-4" />
@@ -253,6 +252,12 @@ export const BackupModal: React.FC<BackupModalProps> = ({
             </div>
           </div>
 
+          {getPreviousBackup() !== null && (
+            <button type="button" className="min-h-11 text-sm text-[#5b4fe9] underline" onClick={() => {
+              const previous = getPreviousBackup();
+              if (previous) handleExport(previous);
+            }}>Baixar cópia anterior à última importação</button>
+          )}
           {/* Section 2: Import */}
           <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
             <span className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
@@ -439,7 +444,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
                     type="button"
                     disabled={isProcessing}
                     onClick={() => handleConfirmImport(false)}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-[#5b4fe9] hover:bg-[#4d40d9] text-white font-bold text-xs shadow-md shadow-purple-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                   >
                     {isProcessing ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

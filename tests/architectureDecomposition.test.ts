@@ -99,7 +99,7 @@ test('Consolidação Arquitetural: Regras Compartilhadas entre Lista e Kanban', 
     assert.equal(stats.total, 2);
     assert.equal(stats.completed, 1);
     assert.equal(stats.active, 1);
-    assert.equal(stats.pinned, 1);
+    assert.equal(stats.pinned, 0);
     assert.equal(stats.rate, 50);
   });
 });

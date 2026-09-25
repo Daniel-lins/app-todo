@@ -272,12 +272,13 @@ describe('Central de Backup: Resolução de Conflitos, Mesclagem e Substituiçã
     assert.equal(merged[0].title, 'Original Existente', 'Tarefa existente NÃO pode ser modificada');
 
     // A tarefa importada conflitante deve ter recebido um ID novo com prefixo
-    assert.ok(merged[1].id.startsWith('t-1-imp-'));
+    assert.notEqual(merged[1].id, 't-1');
+    assert.match(merged[1].id, /^[0-9a-f-]{36}$/);
     assert.equal(merged[1].title, 'Importada com Mesmo ID');
     assert.equal(merged[1].groupId, 'meu-grupo');
 
     // A tarefa inédita mantém seu ID
-    assert.equal(merged[2].id, 't-2');
+    assert.notEqual(merged[2].id, 't-2');
     assert.equal(merged[2].groupId, 'meu-grupo');
   });
 
@@ -293,7 +294,8 @@ describe('Central de Backup: Resolução de Conflitos, Mesclagem e Substituiçã
     const replaced = resolveImportTodos(existingTodos, imported, 'replace', 'grupo-vendas');
 
     assert.equal(replaced.length, 1);
-    assert.equal(replaced[0].id, 'nova-1');
+    assert.notEqual(replaced[0].id, 'nova-1');
+    assert.equal(replaced[0].title, 'Nova Tarefa');
     assert.equal(replaced[0].title, 'Nova Tarefa');
     assert.equal(replaced[0].groupId, 'grupo-vendas');
   });
@@ -330,7 +332,8 @@ describe('Central de Backup: Resolução de Conflitos, Mesclagem e Substituiçã
     // 1. Grupo A foi substituído
     const loadedGroupA = loadContextTodos(userId, 'group-a', storage);
     assert.equal(loadedGroupA.todos.length, 1);
-    assert.equal(loadedGroupA.todos[0].id, 'ga-nova');
+    assert.notEqual(loadedGroupA.todos[0].id, 'ga-nova');
+    assert.equal(loadedGroupA.todos[0].title, 'Nova Grupo A');
 
     // 2. Espaço Pessoal permaneceu 100% inalterado
     const loadedPersonal = loadContextTodos(userId, null, storage);

@@ -227,15 +227,7 @@ describe('Isolamento de Armazenamento e Migração Segura', () => {
     storage.setItem(GUEST_STORAGE_KEY, JSON.stringify(realUserTasks));
 
     // Mock client do Supabase que simula uma falha de banco de dados
-    const failingSupabaseClient = {
-      from() {
-        return {
-          insert: async () => {
-            return { error: { message: 'Database connection timeout', code: '500' } };
-          },
-        };
-      },
-    };
+    const failingSupabaseClient = { rpc: async () => ({ error: { message: 'Database connection timeout' } }) };
 
     const result = await migrateGuestTasksToCloud('user-42', failingSupabaseClient, storage);
 
@@ -276,16 +268,9 @@ describe('Isolamento de Armazenamento e Migração Segura', () => {
     storage.setItem(GUEST_STORAGE_KEY, JSON.stringify(realUserTasks));
 
     const insertedRows: unknown[] = [];
-    const successfulSupabaseClient = {
-      from() {
-        return {
-          insert: async (payload: unknown) => {
-            insertedRows.push(payload);
-            return { error: null };
-          },
-        };
-      },
-    };
+    const successfulSupabaseClient = { rpc: async (_name: string, payload: unknown) => {
+      insertedRows.push(payload); return { error: null };
+    } };
 
     const result = await migrateGuestTasksToCloud('user-42', successfulSupabaseClient, storage);
 
@@ -311,16 +296,7 @@ describe('Isolamento de Armazenamento e Migração Segura', () => {
     storage.setItem(GUEST_STORAGE_KEY, JSON.stringify(INITIAL_TODOS));
 
     let insertCalled = false;
-    const client = {
-      from() {
-        return {
-          insert: async () => {
-            insertCalled = true;
-            return { error: null };
-          },
-        };
-      },
-    };
+    const client = { rpc: async () => { insertCalled = true; return { error: null }; } };
 
     const result = await migrateGuestTasksToCloud('user-99', client, storage);
 

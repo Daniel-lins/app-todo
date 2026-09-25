@@ -43,29 +43,9 @@ function createMockSupabaseClient(config: {
 
   return {
     operations,
-    from(table: string) {
-      return {
-        upsert(payload: unknown) {
-          operations.push({ table, method: 'upsert', payload });
-          return Promise.resolve(
-            config.shouldFail
-              ? { data: null, error: { message: config.errorMessage || 'Database error' } }
-              : { data: payload, error: null }
-          );
-        },
-        delete() {
-          return {
-            eq(col: string, val: unknown) {
-              operations.push({ table, method: 'delete', payload: { [col]: val } });
-              return Promise.resolve(
-                config.shouldFail
-                  ? { data: null, error: { message: config.errorMessage || 'Delete failed' } }
-                  : { data: null, error: null }
-              );
-            },
-          };
-        },
-      };
+    async rpc(name: string, payload: unknown) {
+      operations.push({ table: name, method: 'rpc', payload });
+      return { error: config.shouldFail ? { message: config.errorMessage || 'Database error' } : null };
     },
   };
 }
@@ -407,14 +387,10 @@ describe('Supabase Sync, Resiliência e Política de Conflitos', () => {
     const queueAfterRetry = loadSyncQueue(userId, groupId, storage);
     assert.equal(queueAfterRetry.length, 0, 'Fila deve ficar vazia após nova tentativa bem-sucedida');
 
-    // Operação no Supabase executou upsert com id determinístico para a tarefa e subtarefas
-    assert.equal(successClient.operations.length, 2);
-    assert.equal(successClient.operations[0].table, 'tasks');
-    assert.equal(successClient.operations[0].method, 'upsert');
-    const upsertPayload = successClient.operations[0].payload as { id: string };
-    assert.equal(upsertPayload.id, 'task-retry-success');
-
-    assert.equal(successClient.operations[1].table, 'subtasks');
-    assert.equal(successClient.operations[1].method, 'upsert');
+    assert.equal(successClient.operations.length, 1);
+    assert.equal(successClient.operations[0].table, 'apply_task_changes');
+    const payload = successClient.operations[0].payload as { p_changes: Array<{ task: { id: string }; subtasks: unknown[] }> };
+    assert.equal(payload.p_changes[0].task.id, 'task-retry-success');
+    assert.equal(payload.p_changes[0].subtasks.length, 1);
   });
 });
