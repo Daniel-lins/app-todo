@@ -220,7 +220,7 @@ export async function migrateGuestTasksToCloud(
     });
     const archivedMapped = archived.map(task => {
       idMap[task.id] ||= crypto.randomUUID();
-      return { ...task, id: idMap[task.id], title: 'Evolução preservada', createdAt: new Date().toISOString(),
+      return { ...task, id: idMap[task.id], title: task.kind === 'mission' ? task.title : 'Evolução preservada', createdAt: new Date().toISOString(),
         subTasks: task.subTasks.map(st => {
           const key = `${task.id}:sub:${st.id}`;
           idMap[key] ||= crypto.randomUUID();

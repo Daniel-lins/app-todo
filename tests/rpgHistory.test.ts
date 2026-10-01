@@ -22,7 +22,7 @@ test('guest deletion preserves rewards, focus and badges after reloading; undo d
   const stats = calculateRpgStats(history);
   assert.equal(stats.totalXp, 60);
   assert.equal(stats.pomodoroFocusMinutes, 25);
-  assert.equal(stats.badges.find(b => b.id === 'first_blood')?.unlocked, true);
+  assert.equal(stats.badges.length, 0);
   assert.equal(JSON.stringify(history).includes('Private'), false);
   stageTaskChanges(null, null, [done], [done], [], storage);
   assert.equal(calculateRpgStats(mergeRpgHistory(history, loadContextTodos(null, null, storage).todos)).totalXp, 60);
@@ -46,12 +46,11 @@ test('guest, accounts and group histories remain isolated', () => {
   assert.equal(readRpgHistory(null, null, storage).length, 0);
 });
 
-test('unfinished tasks immediately count guest focus minutes and Pomodoro badges without completion XP', () => {
+test('unfinished tasks count focus minutes without granting completion XP or generic achievements', () => {
   const stats = calculateRpgStats([{ ...done, completed: false, pomodoros: 5 }]);
   assert.equal(stats.totalXp, 0);
   assert.equal(stats.pomodoroFocusMinutes, 125);
-  assert.equal(stats.badges.find(b => b.id === 'pomodoro_apprentice')?.unlocked, true);
-  assert.equal(stats.badges.find(b => b.id === 'pomodoro_master')?.unlocked, true);
+  assert.equal(stats.badges.length, 0);
 });
 
 test('guest login migrates archived reward evidence even when the visible task list is empty', async () => {
@@ -74,4 +73,21 @@ test('corrupt reward cache cannot crash statistics or inject malformed records',
   assert.deepEqual(parseRpgHistory('{broken'), []);
   assert.deepEqual(parseRpgHistory(JSON.stringify([null, { ...rewardSnapshot(done), subTasks: [null] }, { ...rewardSnapshot(done), pomodoros: -1 }])), []);
   assert.equal(parseRpgHistory(JSON.stringify([rewardSnapshot(done)])).length, 1);
+});
+
+
+test('guest login preserves completed mission names and dates after removal', async () => {
+  const storage = new Memory();
+  const mission: TodoItem = { ...done, kind: 'mission', title: 'Tirar CNH', completedAt: '2026-10-01T18:00:00Z' };
+  stageTaskChanges(null, null, [mission], [mission], [], storage);
+  stageTaskChanges(null, null, [], [], [mission.id], storage);
+  const changes: Array<{ task: { kind: string; title: string; completed_at: string } }> = [];
+  const result = await migrateGuestTasksToCloud('account', { async rpc(_name, args) {
+    changes.push(...args.p_changes as typeof changes);
+    return { error: null };
+  } }, storage);
+  assert.equal(result.success, true);
+  assert.equal(changes[0].task.kind, 'mission');
+  assert.equal(changes[0].task.title, 'Tirar CNH');
+  assert.equal(changes[0].task.completed_at, '2026-10-01T18:00:00Z');
 });

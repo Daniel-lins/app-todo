@@ -6,8 +6,8 @@ Organizador de tarefas com lista, Kanban, subtarefas, grupos, Pomodoro e Gamific
 
 O aplicativo inclui um motor de RPG (*Life RPG*) que transforma tarefas do dia a dia em evolução de personagem:
 - **6 Atributos de Vida**: Trabalho (*Execução & Foco*), Estudo (*Intelecto & Sabedoria*), Saúde (*Vitalidade & Energia*), Finanças (*Prosperidade & Gestão*), Pessoal (*Equilíbrio & Espírito*) e Outros (*Versatilidade & Adaptação*).
-- **XP por Dificuldade**: Prioridade Baixa (+15 XP), Média (+30 XP), Alta (+60 XP) e Urgente (+100 XP), com bônus por subtarefas (+10 XP) e Pomodoros (+20 XP).
-- **Ficha do Herói e Títulos**: Nível geral com barra de progresso, títulos honoríficos (de *Aprendiz da Produtividade* até *Arquimago da Vida*) e 10 medalhas/conquistas desbloqueáveis.
+- **XP por conclusão**: Cada tarefa ou missão vale 30 XP, com bônus por etapas concluídas (+10 XP) e ciclos de foco (+20 XP). A prioridade organiza a agenda, sem alterar a recompensa.
+- **Ficha do Herói e Títulos**: Nível geral com barra de progresso, títulos honoríficos (de *Aprendiz da Produtividade* até *Arquimago da Vida*) e conquistas concretas baseadas nas suas missões grandes.
 - **Documentação Detalhada**: Consulte [`docs/RPG_SYSTEM.md`](docs/RPG_SYSTEM.md) para as fórmulas matemáticas e curva de progressão completas.
 
 ## Executar
@@ -60,3 +60,7 @@ npm run build
 O teste descobre automaticamente todos os arquivos `tests/*.test.ts`. Há testes de domínio, serviços reais de persistência com transporte controlado e migrações executadas em PostgreSQL local via PGlite. Estes últimos verificam RLS, ingresso por convite, autoria, rollback e isolamento entre usuários. Alguns testes antigos verificam estruturas ou modelos simulados; não equivalem a testes do serviço remoto.
 
 A compilação usa fontes do Google e precisa de acesso à rede. A validação local não comprova o estado das políticas, migrações, entrega de e-mail ou Realtime do projeto Supabase publicado. Esses itens precisam de uma verificação no ambiente de destino após a migração.
+
+### Missões grandes e conquistas
+
+No formulário, escolha **Missão grande**, nomeie seu objetivo e adicione pelo menos uma etapa. Concluir todas as etapas transforma a missão em uma conquista com nome e data. Atividades do dia a dia continuam como tarefas normais e geram XP, mas não conquistas. A ficha separa conquistas realizadas de missões em andamento; reabrir uma etapa reabre a missão. Excluir uma missão concluída preserva a conquista.

@@ -43,6 +43,7 @@ export function generateBackupData(todos: TodoItem[], spaceName?: string): strin
   // Limpa campos internos sensíveis se existirem e preserva apenas dados de domínio das tarefas
   const cleanTodos: TodoItem[] = todos.map((t, idx) => ({
     id: t.id,
+    kind: t.kind === 'mission' ? 'mission' : 'task',
     title: t.title.trim(),
     description: t.description ? t.description.trim() : undefined,
     completed: !!t.completed,
@@ -402,9 +403,14 @@ export function validateAndParseBackupFile(
       }
     }
 
+    if (obj.kind === 'mission' && (subTasksList.length === 0 || (completed && subTasksList.some(step => !step.completed)))) {
+      return { valid: false, error: `A missão "${obj.title}" precisa de etapas e só pode estar concluída se todas estiverem feitas.`,
+        todos: [], version, totalTasks: 0, totalSubTasks: 0, conflictsWithExisting: 0, duplicateIdsFound: 0 };
+    }
     validatedTodos.push({
       id,
       title: obj.title.trim(),
+      kind: obj.kind === 'mission' ? 'mission' : 'task',
       description: typeof obj.description === 'string' && obj.description.trim() ? obj.description.trim() : undefined,
       completed,
       status,

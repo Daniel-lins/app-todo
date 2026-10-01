@@ -6,14 +6,14 @@ A evolução é separada por espaço. No espaço pessoal, representa suas tarefa
 
 - Toda tarefa concluída vale 30 XP, independentemente da prioridade. Prioridade organiza a agenda e não mede esforço.
 - Cada subtarefa concluída acrescenta 10 XP e cada ciclo Pomodoro acrescenta 20 XP à recompensa da tarefa.
-- O XP desses bônus entra quando a tarefa é concluída. Minutos de foco e medalhas de Pomodoro contam também em tarefas pendentes.
+- O XP desses bônus entra quando a tarefa é concluída. Minutos de foco contam também em tarefas pendentes; ciclos de foco não criam conquistas genéricas.
 - Cada ciclo completo representa 25 minutos de foco.
 - Cada nível geral L requer 100 × L XP adicionais; os atributos de cada área requerem 50 × L XP adicionais.
-- Categorias alimentam Trabalho, Estudo, Saúde, Finanças, Pessoal e Outros. Os títulos honoríficos e as dez conquistas permanecem disponíveis.
+- Categorias alimentam Trabalho, Estudo, Saúde, Finanças, Pessoal e Outros. Os títulos de nível permanecem; conquistas vêm exclusivamente de missões grandes criadas pelo usuário.
 
 ## Histórico e sincronização
 
-O histórico é deduplicado por tarefa e espaço. Excluir ou limpar tarefas preserva sua evidência de recompensa e foco, sem guardar o título ou a descrição removidos. Restaurar a mesma tarefa não duplica XP; reabrir uma tarefa retira seu XP de conclusão e mantém os ciclos de foco.
+O histórico é deduplicado por tarefa e espaço. Excluir ou limpar tarefas preserva sua evidência de recompensa e foco, sem guardar títulos ou descrições de tarefas comuns. Para missões, preserva o nome do objetivo e a data de conclusão para identificar a conquista; descrições e títulos das etapas não são arquivados. Restaurar a mesma tarefa não duplica XP; reabrir uma tarefa retira seu XP de conclusão e mantém os ciclos de foco.
 
 No visitante, as evidências ficam em armazenamento local. Na conta, `rpg_task_history` mantém o histórico no Supabase: apenas gatilhos privados podem escrevê-lo. RLS permite ler somente o espaço pessoal do usuário ou grupos dos quais é membro. Excluir a conta ou grupo elimina o respectivo histórico.
 
@@ -34,3 +34,7 @@ Configurações → Gamificação oculta XP, acessos e notificações. O histór
 Testes de cálculo, histórico local, visitante → conta, isolamento e PostgreSQL real cobrem exclusão/restauração, reversão, foco em tarefas pendentes, repetição offline, RLS e limpeza de grupos. A migração `durable_rpg_history` inicializa o histórico usando as tarefas ainda existentes. Não é possível recuperar recompensas de tarefas apagadas antes desta atualização.
 
 O backup JSON atual exporta tarefas ativas e seus bônus, sem o histórico de tarefas já removidas. Contas preservam esse histórico na nuvem; no visitante, limpar os dados do navegador também remove o histórico local.
+
+## Missões concretas
+
+`kind: task` é a opção padrão, inclusive para registros anteriores. `kind: mission` exige ao menos uma etapa; apenas missões concluídas com todas as etapas feitas aparecem como conquistas realizadas. Objetivos ativos mostram progresso por etapas. Adicionar uma etapa pendente ou reabrir uma etapa retira a conquista e reabre a missão. Nenhuma missão de exemplo é criada automaticamente. Exportação/importação preserva o tipo, e a migração de visitante para conta preserva nomes e datas de conquistas arquivadas.

@@ -17,6 +17,7 @@ export type AppSyncStatus = 'synced' | 'syncing' | 'local_only' | 'error';
 
 export interface TodoItem {
   id: string;
+  kind?: 'task' | 'mission';
   title: string;
   description?: string;
   completed: boolean;

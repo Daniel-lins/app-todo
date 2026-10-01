@@ -191,7 +191,7 @@ test('Sistema RPG: Consolidação Global e Avaliação de Conquistas (calculateR
     assert.equal(stats.attributes.study.xp, 0);
   });
 
-  await t.test('Distribuição por múltiplas áreas da vida e desbloqueio de Conquista Polymath', () => {
+  await t.test('Tarefas comuns distribuem XP sem produzir conquistas genéricas', () => {
     const tasks: TodoItem[] = [
       { id: '1', title: 'T1', completed: true, priority: 'medium', category: 'work', pinned: false, subTasks: [], createdAt: '' },
       { id: '2', title: 'T2', completed: true, priority: 'medium', category: 'study', pinned: false, subTasks: [], createdAt: '' },
@@ -205,17 +205,10 @@ test('Sistema RPG: Consolidação Global e Avaliação de Conquistas (calculateR
 
     const stats = calculateRpgStats(tasks, 150);
 
-    // Conquistas esperadas
-    const firstBlood = stats.badges.find((b) => b.id === 'first_blood');
-    const urgentSlayer = stats.badges.find((b) => b.id === 'urgent_slayer');
-    const subtaskMaster = stats.badges.find((b) => b.id === 'subtask_master');
-    const polymath = stats.badges.find((b) => b.id === 'polymath');
-    const pomodoroMaster = stats.badges.find((b) => b.id === 'pomodoro_master');
-
-    assert.equal(firstBlood?.unlocked, true, 'Deve desbloquear Primeiro Passo');
-    assert.equal(urgentSlayer?.unlocked, true, 'Deve desbloquear Sem Medo do Perigo');
-    assert.equal(subtaskMaster?.unlocked, true, 'Deve desbloquear Mestre dos Detalhes');
-    assert.equal(polymath?.unlocked, true, 'Deve desbloquear Vida Equilibrada (4 categorias)');
-    assert.equal(pomodoroMaster?.unlocked, true, 'Deve desbloquear Monge do Foco (150 min foco)');
+    assert.equal(stats.badges.length, 0);
+    assert.equal(stats.attributes.work.xp, 30);
+    assert.equal(stats.attributes.study.xp, 30);
+    assert.equal(stats.attributes.health.xp, 30);
+    assert.equal(stats.attributes.finance.xp, 60);
   });
 });

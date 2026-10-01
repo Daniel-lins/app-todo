@@ -212,105 +212,18 @@ export function getTaskCompletionReward(task: TodoItem): {
 /**
  * Avalia as Conquistas / Badges com base no estado das tarefas e minutos de foco.
  */
-export function evaluateBadges(
-  completedTasks: TodoItem[],
-  totalLevel: number,
-  focusMinutes: number = 0,
-  focusCycles: number = 0
-): RpgBadge[] {
-  const completedCount = completedTasks.length;
-  const hasUrgent = completedTasks.some((t) => t.priority === 'urgent');
-  const hasDetailedTask = completedTasks.some(
-    (t) => Array.isArray(t.subTasks) && t.subTasks.filter((s) => s.completed).length >= 3
-  );
-
-  const completedCategories = new Set(completedTasks.map((t) => t.category));
-  const distinctCategoriesCount = completedCategories.size;
-
-  const totalPomodorosCompleted = focusCycles;
-
-  return [
-    {
-      id: 'first_blood',
-      title: 'Primeiro Passo',
-      description: 'Concluiu sua primeira missão no aplicativo.',
-      icon: '⚔️',
-      unlocked: completedCount >= 1,
-      progress: { current: Math.min(1, completedCount), total: 1 },
-    },
-    {
-      id: 'task_streak_5',
-      title: 'Ritmo Constante',
-      description: 'Concluiu com sucesso 5 tarefas.',
-      icon: '🔥',
-      unlocked: completedCount >= 5,
-      progress: { current: Math.min(5, completedCount), total: 5 },
-    },
-    {
-      id: 'task_streak_25',
-      title: 'Máquina de Entregas',
-      description: 'Concluiu 25 tarefas e solidificou sua disciplina.',
-      icon: '🏆',
-      unlocked: completedCount >= 25,
-      progress: { current: Math.min(25, completedCount), total: 25 },
-    },
-    {
-      id: 'urgent_slayer',
-      title: 'Sem Medo do Perigo',
-      description: 'Completou com êxito uma tarefa de prioridade Urgente.',
-      icon: '⚡',
-      unlocked: hasUrgent,
-    },
-    {
-      id: 'subtask_master',
-      title: 'Mestre dos Detalhes',
-      description: 'Finalizou uma tarefa com 3 ou mais subtarefas.',
-      icon: '🧩',
-      unlocked: hasDetailedTask,
-    },
-    {
-      id: 'pomodoro_apprentice',
-      title: 'Mente Blindada',
-      description: 'Concluiu um ciclo Pomodoro de foco em uma tarefa.',
-      icon: '⏱️',
-      unlocked: totalPomodorosCompleted >= 1 || focusMinutes >= 25,
-    },
-    {
-      id: 'pomodoro_master',
-      title: 'Monge do Foco',
-      description: 'Acumulou 5 ciclos de foco ou 120 minutos de imersão.',
-      icon: '🧘',
-      unlocked: totalPomodorosCompleted >= 5 || focusMinutes >= 120,
-      progress: {
-        current: Math.min(120, focusMinutes),
-        total: 120,
-      },
-    },
-    {
-      id: 'polymath',
-      title: 'Vida Equilibrada',
-      description: 'Concluiu tarefas em pelo menos 4 áreas da vida distintas.',
-      icon: '🌈',
-      unlocked: distinctCategoriesCount >= 4,
-      progress: { current: Math.min(4, distinctCategoriesCount), total: 4 },
-    },
-    {
-      id: 'level_5',
-      title: 'Aventureiro Focado',
-      description: 'Atingiu o Nível Geral 5 do Personagem.',
-      icon: '⭐',
-      unlocked: totalLevel >= 5,
-      progress: { current: Math.min(5, totalLevel), total: 5 },
-    },
-    {
-      id: 'level_10',
-      title: 'Guardião da Rotina',
-      description: 'Atingiu o Nível Geral 10 do Personagem.',
-      icon: '👑',
-      unlocked: totalLevel >= 10,
-      progress: { current: Math.min(10, totalLevel), total: 10 },
-    },
-  ];
+export function evaluateBadges(todos: TodoItem[]): RpgBadge[] {
+  return todos.filter(task => task.kind === 'mission').map(task => {
+    const current = task.subTasks.filter(step => step.completed).length;
+    const total = task.subTasks.length;
+    const unlocked = task.completed && total > 0 && current === total;
+    return {
+      id: `mission:${task.id}`, title: task.title, category: task.category,
+      description: unlocked ? 'Missão grande concluída.' : 'Complete as etapas para conquistar este objetivo.',
+      icon: 'Award', unlocked, unlockedAt: unlocked ? task.completedAt : undefined,
+      progress: { current, total },
+    };
+  }).sort((a, b) => Number(b.unlocked) - Number(a.unlocked) || (b.unlockedAt || '').localeCompare(a.unlockedAt || '') || a.title.localeCompare(b.title));
 }
 
 /**
@@ -374,7 +287,7 @@ export function calculateRpgStats(
     };
   }
 
-  const badges = evaluateBadges(completedTasks, levelProgress.level, scopedFocusMinutes, focusCycles);
+  const badges = evaluateBadges(todos || []);
 
   return {
     totalXp,

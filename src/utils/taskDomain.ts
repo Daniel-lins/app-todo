@@ -141,6 +141,11 @@ export function sanitizeTaskUpdates(
   const cleanUpdates: Partial<TodoItem> = { updatedAt: nowISO };
   const dbUpdates: Record<string, unknown> = { updated_at: nowISO };
 
+  if (updates.kind !== undefined) {
+    cleanUpdates.kind = updates.kind === 'mission' ? 'mission' : 'task';
+    dbUpdates.kind = cleanUpdates.kind;
+  }
+
   if ('title' in updates && updates.title !== undefined) {
     const cleanTitle = updates.title.trim();
     cleanUpdates.title = cleanTitle;
@@ -218,6 +223,18 @@ export function sanitizeTaskUpdates(
 
   if ('subTasks' in updates && updates.subTasks !== undefined) {
     cleanUpdates.subTasks = updates.subTasks;
+  }
+
+  if ((cleanUpdates.kind || currentTask?.kind) === 'mission' && ('subTasks' in updates || 'kind' in updates)) {
+    const steps = cleanUpdates.subTasks || currentTask?.subTasks || [];
+    if (!steps.length) throw new Error('Adicione pelo menos uma etapa à missão grande.');
+    const completed = steps.every(step => step.completed);
+    cleanUpdates.completed = completed;
+    cleanUpdates.status = completed ? 'completed' : steps.some(step => step.completed) ? 'in_progress' : 'todo';
+    cleanUpdates.completedAt = completed ? (currentTask?.completedAt || nowISO) : undefined;
+    dbUpdates.completed = completed;
+    dbUpdates.status = cleanUpdates.status;
+    dbUpdates.completed_at = cleanUpdates.completedAt || null;
   }
 
   return { cleanUpdates, dbUpdates };

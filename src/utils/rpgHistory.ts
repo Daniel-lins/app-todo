@@ -1,13 +1,15 @@
 import type { TodoItem } from '../types/todo';
 import { getStorageKey, type StorageLike } from './todoStorage';
 
-// Retain only reward evidence, never the deleted task's title or description.
+// Mission names are achievement evidence. Ordinary deleted task content stays private.
 export function rewardSnapshot(task: TodoItem): TodoItem {
   return {
-    id: task.id, title: '', createdAt: '', pinned: false,
+    id: task.id, kind: task.kind || 'task', title: task.kind === 'mission' ? task.title : '', createdAt: '', pinned: false,
+    completedAt: task.completedAt,
     completed: task.completed, category: task.category, priority: task.priority,
     pomodoros: task.pomodoros || 0,
-    subTasks: task.subTasks.filter(s => s.completed).map((_, i) => ({ id: String(i), title: '', completed: true })),
+    subTasks: (task.kind === 'mission' ? task.subTasks : task.subTasks.filter(s => s.completed))
+      .map((s, i) => ({ id: String(i), title: '', completed: s.completed })),
   };
 }
 

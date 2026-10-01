@@ -132,6 +132,37 @@ test('real PostgreSQL migrations, permissions and atomic persistence', async t =
       assert.equal((await db.query("UPDATE rpg_task_history SET pomodoros=999 RETURNING task_id")).rows.length, 0);
       await assert.rejects(db.query('SELECT private.capture_task_rpg()'), /permission denied/);
     });
+    await t.test('missions preserve their name, stages and completion date through deletion and replay', async () => {
+      await asUser(owner);
+      const base = snapshot('mission-cnh', 'Tirar CNH', [
+        { id: 'cnh-theory', task_id: 'mission-cnh', title: 'Prova teórica', completed: true },
+        { id: 'cnh-practice', task_id: 'mission-cnh', title: 'Prova prática', completed: false },
+      ]);
+      const mission = { ...base, task: { ...base.task, kind: 'mission', completed_at: '2026-10-01T18:00:00Z' } };
+      await save([mission]);
+      assert.deepEqual((await db.query("SELECT kind,mission_title,total_subtasks,completed_subtasks FROM rpg_task_history WHERE task_id='mission-cnh'")).rows,
+        [{ kind: 'mission', mission_title: 'Tirar CNH', total_subtasks: 2, completed_subtasks: 1 }]);
+      mission.task.completed = true;
+      await assert.rejects(save([mission]), /Conclua todas as etapas/);
+      mission.subtasks[1] = { id: 'cnh-practice', task_id: 'mission-cnh', title: 'Prova prática', completed: true };
+      await save([mission]);
+      await save([{ ...mission, action: 'delete' }]);
+      await save([{ ...mission, action: 'delete' }]);
+      const result = await db.query<{ mission_title: string; total_subtasks: number; completed_subtasks: number; completed_at: Date }>("SELECT mission_title,total_subtasks,completed_subtasks,completed_at FROM rpg_task_history WHERE task_id='mission-cnh'");
+      assert.equal(result.rows.length, 1);
+      assert.equal(result.rows[0].mission_title, 'Tirar CNH');
+      assert.equal(result.rows[0].total_subtasks, 2);
+      assert.equal(result.rows[0].completed_subtasks, 2);
+      assert.equal(result.rows[0].completed_at.toISOString(), '2026-10-01T18:00:00.000Z');
+      await save([mission]);
+      mission.task.completed = false;
+      mission.subtasks[1] = { id: 'cnh-practice', task_id: 'mission-cnh', title: 'Prova prática', completed: false };
+      await save([mission]);
+      assert.equal((await db.query<{ completed: boolean }>("SELECT completed FROM rpg_task_history WHERE task_id='mission-cnh'")).rows[0].completed, false);
+      await assert.rejects(save([{ ...mission, subtasks: [] }]), /pelo menos uma etapa/);
+      await asUser(outsider);
+      assert.equal((await db.query("SELECT * FROM rpg_task_history WHERE task_id='mission-cnh'")).rows.length, 0);
+    });
     await t.test('deleting a group cascades its history without recreating orphan rewards', async () => {
       await asUser(owner);
       await db.query('DELETE FROM groups WHERE id=$1', [group]);

@@ -308,6 +308,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         task.completed ? 'line-through text-zinc-400 dark:text-zinc-500' : ''
                       }`}>
                         {task.title}
+                        {task.kind === 'mission' && <span className="block mt-1 text-xs font-medium text-[#5b4fe9] dark:text-[#a59bfb]">Missão grande · {task.subTasks.filter(step => step.completed).length}/{task.subTasks.length} etapas</span>}
                       </h4>
 
                       {/* Description snippet if any */}

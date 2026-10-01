@@ -77,6 +77,7 @@ export function useTodos() {
   // Helper: map Supabase DB row to TodoItem
   interface SupabaseTaskRow {
     id: string;
+    kind?: TodoItem['kind'];
     title: string;
     description?: string | null;
     completed: boolean;
@@ -105,6 +106,7 @@ export function useTodos() {
   const mapDbToTodo = useCallback((row: SupabaseTaskRow): TodoItem => {
     return {
       id: row.id,
+      kind: row.kind || 'task',
       title: row.title,
       description: row.description || undefined,
       completed: row.completed,
@@ -265,6 +267,7 @@ export function useTodos() {
             title,
             description,
             completed,
+            kind,
             status,
             priority,
             category,

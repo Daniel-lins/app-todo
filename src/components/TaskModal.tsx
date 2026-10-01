@@ -23,13 +23,16 @@ interface TaskModalProps {
   onClose: () => void;
   onSubmit: (taskData: Omit<TodoItem, 'id' | 'completed' | 'createdAt' | 'order' | 'pomodoros'>) => Promise<void> | void;
   initialData?: TodoItem | null;
+  initialKind?: TodoItem['kind'];
 }
 
 const TaskModalContent: React.FC<TaskModalProps> = ({
   onClose,
   onSubmit,
   initialData,
+  initialKind = 'task',
 }) => {
+  const [kind, setKind] = useState<'task' | 'mission'>(initialData?.kind || initialKind);
   const [title, setTitle] = useState(initialData?.title || '');
   const [description, setDescription] = useState(initialData?.description || '');
   const [priority, setPriority] = useState<Priority>(initialData?.priority || 'medium');
@@ -42,7 +45,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showOptionalDetails, setShowOptionalDetails] = useState<boolean>(Boolean(
-    initialData?.description || 
+    initialKind === 'mission' || initialData?.kind === 'mission' || initialData?.description ||
     initialData?.dueDate || 
     initialData?.dueTime ||
     (initialData?.priority && initialData.priority !== 'medium') || 
@@ -85,11 +88,17 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
       return;
     }
 
+    if (kind === 'mission' && !subTasks.length) {
+      setShowOptionalDetails(true);
+      setError('Adicione pelo menos uma etapa à missão grande.');
+      return;
+    }
     setIsSubmitting(true);
     setError('');
     try {
       await onSubmit({
         title: title.trim(),
+        kind,
         description: description.trim() ? description.trim() : '',
         priority,
         category,
@@ -119,7 +128,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
           <h2 id="task-modal-title" className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-            {initialData ? 'Editar Tarefa' : 'Nova Tarefa'}
+            {initialData ? 'Editar tarefa ou missão' : kind === 'mission' ? 'Nova missão grande' : 'Nova tarefa'}
           </h2>
           <button
             type="button"
@@ -146,12 +155,20 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
             )}
 
             {/* Title - Fast Capture Primary Input */}
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-zinc-700 dark:text-zinc-300">O que você quer criar?</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-zinc-800 dark:text-zinc-200">
+                <label className="flex min-h-11 items-center gap-2"><input type="radio" name="task-kind" checked={kind === 'task'} onChange={() => setKind('task')} />Tarefa do dia a dia</label>
+                <label className="flex min-h-11 items-center gap-2"><input type="radio" name="task-kind" checked={kind === 'mission'} onChange={() => { setKind('mission'); setShowOptionalDetails(true); }} />Missão grande</label>
+              </div>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">{kind === 'mission' ? 'Um objetivo com etapas. Ao concluí-lo, ele entra nas suas conquistas.' : 'Uma atividade normal. Ela gera XP, mas não vira uma conquista.'}</p>
+            </fieldset>
             <div>
               <label
                 htmlFor="task-title-input"
                 className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5"
               >
-                Título da Tarefa *
+                {kind === 'mission' ? 'Nome da missão *' : 'Título da tarefa *'}
               </label>
               <input
                 id="task-title-input"
@@ -163,7 +180,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
                   setTitle(e.target.value);
                   if (error) setError('');
                 }}
-                placeholder="Ex: Concluir relatório trimestral..."
+                placeholder={kind === 'mission' ? 'Ex: Ler dez livros ou tirar CNH' : 'Ex: Concluir relatório trimestral...'}
                 className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 text-sm font-medium transition-all"
               />
             </div>
@@ -330,7 +347,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
                     htmlFor="task-new-subtask-input"
                     className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5"
                   >
-                    Etapas / Subtarefas ({subTasks.length})
+                    {kind === 'mission' ? 'Etapas da missão' : 'Etapas / Subtarefas'} ({subTasks.length})
                   </label>
 
                   {/* List of existing subtasks in modal */}
@@ -368,7 +385,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
                           handleAddSubTask();
                         }
                       }}
-                      placeholder="Adicionar subtarefa e teclar Enter..."
+                      placeholder={kind === 'mission' ? 'Ex: Livro 1, prova teórica, aulas práticas...' : 'Adicionar subtarefa e teclar Enter...'}
                       className="flex-1 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/40 min-h-[38px]"
                     />
                     <button
@@ -417,7 +434,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
               className="flex items-center gap-2 px-5 py-2 rounded-xl bg-[#5b4fe9] hover:bg-[#4d40d9] text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-500/25 hover:shadow-indigo-500/35 transition-all duration-200 disabled:opacity-50 min-h-[38px]"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>{initialData ? 'Salvar Alterações' : 'Criar Tarefa'}</span>
+              <span>{initialData ? 'Salvar alterações' : kind === 'mission' ? 'Criar missão grande' : 'Criar tarefa'}</span>
             </button>
           </div>
         </form>
@@ -426,7 +443,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
   );
 };
 
-export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, initialData }) => {
+export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit, initialData, initialKind }) => {
   if (!isOpen) return null;
   return (
     <TaskModalContent
@@ -435,6 +452,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ isOpen, onClose, onSubmit,
       onClose={onClose}
       onSubmit={onSubmit}
       initialData={initialData}
+      initialKind={initialKind}
     />
   );
 };

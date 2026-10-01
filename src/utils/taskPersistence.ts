@@ -11,7 +11,7 @@ export interface TaskTransport {
 
 export function taskPayload(task: TodoItem, userId: string, groupId: string | null) {
   return {
-    id: task.id, user_id: userId, group_id: groupId, title: task.title,
+    id: task.id, user_id: userId, group_id: groupId, title: task.title, kind: task.kind || 'task',
     description: task.description || null, completed: task.completed,
     status: task.status || (task.completed ? 'completed' : 'todo'),
     priority: task.priority, category: task.category, due_date: task.dueDate || null,

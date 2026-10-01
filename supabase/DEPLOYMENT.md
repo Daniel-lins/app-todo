@@ -29,3 +29,7 @@ Esta verificação cobre o banco. Não representa publicação do frontend nem t
 Migração `durable_rpg_history` aplicada ao mesmo projeto remoto. Histórico inicializado das tarefas existentes; gatilhos privados preservam somente evidências de recompensa. Títulos e descrições de tarefas removidas não são arquivados.
 
 Testes locais com PostgreSQL cobrem exclusão, desfazer, reabertura, ciclos de foco, repetição offline, leitura de membros e remoção de grupos. Verificação remota em transação revertida confirmou isolamento de terceiros. Os avisos de segurança anteriores permaneceram: RPCs autenticadas de grupos, intencionais, e proteção contra senhas vazadas desativada. Nenhum novo aviso de segurança foi introduzido.
+
+## Missões pessoais — 01/10/2026
+
+Migração `personal_mission_achievements` aplicada ao projeto remoto. Tarefas existentes mantêm o tipo normal; missões são uma escolha explícita. O histórico preserva nome do objetivo, data e contagem de etapas. Teste autenticado em transação revertida confirmou a conquista após excluir a missão. A suíte PostgreSQL também verifica etapas pendentes, repetição, restauração e isolamento de terceiros. Nenhum novo aviso de segurança foi introduzido.

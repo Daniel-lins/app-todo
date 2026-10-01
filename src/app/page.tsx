@@ -156,8 +156,16 @@ export default function Home() {
     } finally { completionInFlight.current.delete(taskId); }
   };
 
+  const handleToggleSubTask = async (taskId: string, subId: string) => {
+    const task = todos.find(t => t.id === taskId);
+    const beforeXp = rpgStats.totalXp;
+    await toggleSubTask(taskId, subId);
+    if (task && !task.completed) rewardCompletion(task, beforeXp);
+  };
+
   // Estados dos Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newTaskKind, setNewTaskKind] = useState<TodoItem['kind']>('task');
   const [editingTask, setEditingTask] = useState<TodoItem | null>(null);
   const [quickTitle, setQuickTitle] = useState('');
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
@@ -858,7 +866,7 @@ export default function Home() {
                         onDelete={handleDeleteTask}
                         onPin={togglePin}
                         onEdit={handleOpenEdit}
-                        onToggleSubTask={toggleSubTask}
+                        onToggleSubTask={handleToggleSubTask}
                         onAddSubTask={addSubTask}
                         onDeleteSubTask={deleteSubTask}
                         onStartPomodoro={handleStartPomodoro}
@@ -899,7 +907,7 @@ export default function Home() {
                           onDelete={handleDeleteTask}
                           onPin={togglePin}
                           onEdit={handleOpenEdit}
-                          onToggleSubTask={toggleSubTask}
+                          onToggleSubTask={handleToggleSubTask}
                           onAddSubTask={addSubTask}
                           onDeleteSubTask={deleteSubTask}
                           onStartPomodoro={handleStartPomodoro}
@@ -964,7 +972,7 @@ export default function Home() {
           className="fixed top-4 left-4 right-4 sm:left-auto sm:max-w-sm z-50 flex items-center gap-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 px-4 py-3 rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 text-sm"
         >
           <Sparkles className="w-5 h-5 text-[#5b4fe9] shrink-0" />
-          <span>{xpToast.level ? `Nível ${xpToast.level} alcançado! ` : ''}+{xpToast.xp} XP em {xpToast.areaName}.</span>
+          <span>{xpToast.achievement ? `Conquista realizada: ${xpToast.achievement}! ` : ''}{xpToast.level ? `Nível ${xpToast.level} alcançado! ` : ''}+{xpToast.xp} XP em {xpToast.areaName}.</span>
           <button type="button" onClick={dismissNotice} aria-label="Dispensar recompensa" className="min-w-11 min-h-11 text-zinc-500">×</button>
         </div>
       )}
@@ -972,9 +980,11 @@ export default function Home() {
       {/* Modais do Aplicativo */}
       <TaskModal
         isOpen={isModalOpen}
+        initialKind={newTaskKind}
         onClose={() => {
           setIsModalOpen(false);
           setEditingTask(null);
+          setNewTaskKind('task');
         }}
         onSubmit={handleModalSubmit}
         initialData={editingTask}
@@ -1070,6 +1080,7 @@ export default function Home() {
         scopeName={currentGroupId ? groups.find(g => g.id === currentGroupId)?.name || 'Grupo' : 'Seu espaço pessoal'}
         isGroup={!!currentGroupId}
         historyError={historyError}
+        onCreateMission={() => { setIsCharacterSheetOpen(false); setEditingTask(null); setNewTaskKind('mission'); setIsModalOpen(true); }}
       />
 
 

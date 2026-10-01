@@ -8,6 +8,7 @@ import { useAccessibleModal } from '../hooks/useAccessibleModal';
 interface Props {
   isOpen: boolean; onClose: () => void; rpgStats: RpgStats;
   profile: UserProfile | null; scopeName: string; isGroup: boolean; historyError: string | null;
+  onCreateMission: () => void;
 }
 const icons = { work: Briefcase, study: BookOpen, health: Heart, finance: DollarSign, personal: Sparkles, other: Shield };
 
@@ -18,7 +19,7 @@ function Progress({ value, label }: { value: number; label: string }) {
   </div>;
 }
 
-export function RpgCharacterModal({ isOpen, onClose, rpgStats: stats, scopeName, isGroup, historyError }: Props) {
+export function RpgCharacterModal({ isOpen, onClose, rpgStats: stats, scopeName, isGroup, historyError, onCreateMission }: Props) {
   const [tab, setTab] = useState<'areas' | 'badges'>('areas');
   const closeRef = useRef<HTMLButtonElement>(null);
   const { modalRef } = useAccessibleModal({ isOpen, onClose, initialFocusRef: closeRef });
@@ -57,7 +58,7 @@ export function RpgCharacterModal({ isOpen, onClose, rpgStats: stats, scopeName,
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-zinc-600 dark:text-zinc-400">
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" />{stats.tasksCompletedCount} concluídas</span>
             <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" />{stats.pomodoroFocusMinutes} min de foco</span>
-            <span className="flex items-center gap-1.5"><Award className="w-4 h-4" />{unlocked}/{stats.badges.length} conquistas</span>
+            <span className="flex items-center gap-1.5"><Award className="w-4 h-4" />{unlocked} {unlocked === 1 ? 'conquista' : 'conquistas'}</span>
           </div>
           <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
             {isGroup ? 'Progresso coletivo das tarefas deste grupo. ' : 'Progresso das tarefas deste espaço. '}
@@ -92,20 +93,30 @@ export function RpgCharacterModal({ isOpen, onClose, rpgStats: stats, scopeName,
                 <p className="text-xs text-zinc-600 dark:text-zinc-400 tabular-nums">{attr.currentLevelXp}/{attr.nextLevelXp} XP · {attr.progressPercent}%</p>
               </section>;
             })}
-          </div> : <ul className="space-y-4">
-            {stats.badges.map(badge => <li key={badge.id} className="flex gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4 last:border-0">
+          </div> : <div className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">Suas conquistas são as missões grandes que você concluiu. Tarefas do dia a dia continuam gerando XP.</p>
+              <button type="button" onClick={onCreateMission} className="min-h-11 px-4 rounded-lg bg-[#5b4fe9] text-white text-sm font-medium hover:bg-[#4d40d9] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#5b4fe9]">Criar missão grande</button>
+            </div>
+            {[true, false].map(achieved => <section key={String(achieved)} className="space-y-3">
+              <h3 className="text-sm font-semibold">{achieved ? 'Conquistas realizadas' : 'Missões em andamento'}</h3>
+              {!stats.badges.some(b => b.unlocked === achieved) && <p className="text-sm text-zinc-600 dark:text-zinc-400">{achieved ? 'Ao terminar uma missão grande, sua conquista aparece aqui com o nome e a data de conclusão.' : 'Crie um objetivo como “Ler dez livros” e adicione uma etapa para cada livro.'}</p>}
+              <ul className="space-y-4">
+            {stats.badges.filter(b => b.unlocked === achieved).map(badge => <li key={badge.id} className="flex gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4 last:border-0">
               <Award className={`w-5 h-5 mt-0.5 shrink-0 ${badge.unlocked ? 'text-[#5b4fe9] dark:text-[#a59bfb]' : 'text-zinc-500'}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap justify-between gap-1 text-sm"><h3 className="font-medium">{badge.title}</h3><span className="text-zinc-600 dark:text-zinc-400">{badge.unlocked ? 'Conquistada' : 'A conquistar'}</span></div>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{badge.description}</p>
-                {!badge.unlocked && badge.progress && <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 tabular-nums">{badge.progress.current}/{badge.progress.total}</p>}
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{badge.unlocked && badge.unlockedAt ? `Concluída em ${new Date(badge.unlockedAt).toLocaleDateString('pt-BR')}` : badge.description}</p>
+                {badge.progress && <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 tabular-nums">{badge.progress.current}/{badge.progress.total} etapas concluídas</p>}
+                {!badge.unlocked && badge.progress && <div className="mt-2"><Progress value={badge.progress.total ? Math.floor(badge.progress.current / badge.progress.total * 100) : 0} label={`Etapas de ${badge.title}`} /></div>}
               </div>
             </li>)}
-          </ul>}
+          </ul></section>)}
+          </div>}
         </div>
         <details className="text-sm text-zinc-600 dark:text-zinc-400">
           <summary className="cursor-pointer min-h-11 flex items-center gap-2"><Zap className="w-4 h-4" />Como ganhar XP</summary>
-          <p className="leading-relaxed">Cada tarefa concluída vale 30 XP, mais 10 por subtarefa feita e 20 por ciclo de foco. A prioridade organiza sua agenda e não aumenta a recompensa. Os bônus entram no XP quando a tarefa é concluída; minutos de foco e conquistas de Pomodoro contam imediatamente.</p>
+          <p className="leading-relaxed">Cada tarefa ou missão concluída vale 30 XP, mais 10 por etapa feita e 20 por ciclo de foco. Os bônus entram no XP quando a tarefa é concluída; minutos de foco contam imediatamente. Apenas missões grandes viram conquistas.</p>
         </details>
       </div>
     </div>

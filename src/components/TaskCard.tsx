@@ -179,6 +179,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
         {/* Content */}
         <div className="flex-1 min-w-0">
+          {task.kind === 'mission' && <p className="text-xs font-medium text-[#5b4fe9] dark:text-[#a59bfb] mb-1">{task.completed ? 'Missão conquistada' : 'Missão grande'} · {completedSubs}/{totalSubs} etapas</p>}
           {/* Title */}
           <div className="flex items-start justify-between gap-3">
             <h3

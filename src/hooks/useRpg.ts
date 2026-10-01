@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { TodoItem, Category, Priority } from '../types/todo';
-import { calculateRpgStats, calculateLevelFromXp, getTaskCompletionReward } from '../utils/rpgService';
+import { calculateRpgStats, calculateLevelFromXp, getTaskCompletionReward, evaluateBadges } from '../utils/rpgService';
 import { historyKey, mergeRpgHistory, parseRpgHistory, readRpgHistory, saveRpgHistory } from '../utils/rpgHistory';
 import { loadContextTodos, loadSyncQueue } from '../utils/todoStorage';
 import { createClient } from '../utils/supabase/client';
@@ -21,7 +21,7 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
   contextId: string; isLoaded: boolean; syncStatus: string;
 }) {
   const [isCharacterSheetOpen, setIsCharacterSheetOpen] = useState(false);
-  const [notice, setNotice] = useState<{ context: string; xp: number; areaName: string; level: number | null } | null>(null);
+  const [notice, setNotice] = useState<{ context: string; xp: number; areaName: string; level: number | null; achievement?: string } | null>(null);
   const [historyError, setHistoryError] = useState<{ context: string; message: string } | null>(null);
   const key = historyKey(userId, groupId);
   const snapshot = useSyncExternalStore(subscribeHistory, () => {
@@ -34,7 +34,10 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
   useEffect(() => { activeContext.current = contextId; }, [contextId]);
 
   const rpgStats = useMemo(() => {
-    return calculateRpgStats(mergeRpgHistory(parseRpgHistory(snapshot), isLoaded ? todos : []));
+    const current = isLoaded ? todos : [];
+    const rewards = mergeRpgHistory(parseRpgHistory(snapshot), current);
+    const currentIds = new Set(current.map(task => task.id));
+    return { ...calculateRpgStats(rewards), badges: evaluateBadges(rewards.filter(task => task.completed || currentIds.has(task.id))) };
   }, [snapshot, todos, isLoaded]);
 
   useEffect(() => {
@@ -49,16 +52,16 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
         const client = createClient();
         const remote: TodoItem[] = [];
         for (let offset = 0; ; offset += 1000) {
-          let query = client.from('rpg_task_history').select('task_id,category,priority,completed,completed_subtasks,pomodoros').order('task_id').range(offset, offset + 999);
+          let query = client.from('rpg_task_history').select('task_id,category,priority,completed,completed_subtasks,total_subtasks,pomodoros,kind,mission_title,completed_at').order('task_id').range(offset, offset + 999);
           query = groupId ? query.eq('group_id', groupId) : query.eq('user_id', userId).is('group_id', null);
           const { data, error } = await query;
           if (cancelled) return;
           if (error) throw error;
           for (const row of data || []) remote.push({
-            id: row.task_id, title: '', createdAt: '', pinned: false,
+            id: row.task_id, kind: row.kind === 'mission' ? 'mission' : 'task', title: row.mission_title || '', createdAt: '', pinned: false, completedAt: row.completed_at || undefined,
             category: row.category as Category, priority: row.priority as Priority,
             completed: row.completed, pomodoros: row.pomodoros,
-            subTasks: Array.from({ length: row.completed_subtasks }, (_, i) => ({ id: String(i), title: '', completed: true })),
+            subTasks: Array.from({ length: row.kind === 'mission' ? row.total_subtasks : row.completed_subtasks }, (_, i) => ({ id: String(i), title: '', completed: i < row.completed_subtasks })),
           });
           if (!data || data.length < 1000) break;
         }
@@ -86,12 +89,14 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
   const rewardCompletion = useCallback((task: TodoItem, previousXp: number) => {
     if (!enabled || activeContext.current !== contextId) return;
     const current = loadContextTodos(userId, groupId).todos;
-    if (!current.find(t => t.id === task.id)?.completed) return;
+    const completedTask = current.find(t => t.id === task.id);
+    if (!completedTask?.completed) return;
     const after = calculateRpgStats(mergeRpgHistory(readRpgHistory(userId, groupId), current));
     const oldLevel = calculateLevelFromXp(previousXp).level;
-    const reward = getTaskCompletionReward(task);
+    const reward = getTaskCompletionReward(completedTask);
     setNotice({ context: contextId, xp: reward.xp, areaName: reward.areaName,
-      level: after.level > oldLevel ? after.level : null });
+      level: after.level > oldLevel ? after.level : null,
+      achievement: completedTask.kind === 'mission' ? completedTask.title : undefined });
   }, [enabled, contextId, userId, groupId]);
 
   const setEnabled = useCallback((value: boolean) => {
