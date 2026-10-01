@@ -1,24 +1,26 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { 
-  CheckSquare2, 
-  ListTodo, 
-  Plus, 
-  Search, 
-  SlidersHorizontal, 
-  X, 
-  Loader2, 
-  ChevronDown, 
-  ChevronRight, 
-  Kanban as KanbanIcon, 
+import {
+  CheckSquare2,
+  ListTodo,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  X,
+  Loader2,
+  ChevronDown,
+  ChevronRight,
+  Kanban as KanbanIcon,
   RotateCcw,
-  Settings
+  Settings,
+  Sparkles,
 } from 'lucide-react';
 import { useTodos } from '../hooks/useTodos';
 import { usePomodoro } from '../hooks/usePomodoro';
-import { TodoItem, Category, Priority, SortOption } from '../types/todo';
+import { useRpg } from '../hooks/useRpg';
+import { TodoItem, Category, Priority, SortOption, TaskStatus } from '../types/todo';
 import { Sidebar } from '../components/Sidebar';
 import { TaskCard } from '../components/TaskCard';
 import { TaskModal } from '../components/TaskModal';
@@ -31,7 +33,7 @@ import { AuthModal } from '../components/AuthModal';
 import type { ConfirmModalProps } from '../components/ConfirmModal';
 import { AVATAR_PRESETS, CATEGORIES, PRIORITIES } from '../utils/todoConstants';
 import { getLocalDateString } from '../utils/dateUtils';
-import { 
+import {
   checkDeadlinesAndNotify,
   getNotificationStatus,
   NotificationStatus
@@ -60,6 +62,10 @@ const GroupsModal = dynamic(
 );
 const ConfirmModal = dynamic(
   () => import('../components/ConfirmModal').then((m) => m.ConfirmModal),
+  { ssr: false }
+);
+const RpgCharacterModal = dynamic(
+  () => import('../components/RpgCharacterModal').then((m) => m.RpgCharacterModal),
   { ssr: false }
 );
 
@@ -112,6 +118,43 @@ export default function Home() {
     pendingSyncCount,
     retrySync,
   } = useTodos();
+
+  // Sistema de RPG e Gamificação de Áreas da Vida
+  const {
+    rpgStats,
+    isCharacterSheetOpen,
+    setIsCharacterSheetOpen,
+    enabled: rpgEnabled,
+    setEnabled: setRpgEnabled,
+    historyError,
+    notice: xpToast,
+    dismissNotice,
+    rewardCompletion,
+  } = useRpg({ todos, userId: user?.id || null, groupId: currentGroupId, contextId, isLoaded, syncStatus });
+
+  const completionInFlight = useRef(new Set<string>());
+
+  const handleToggleTodo = async (id: string) => {
+    if (completionInFlight.current.has(id)) return;
+    completionInFlight.current.add(id);
+    const task = todos.find(t => t.id === id);
+    const beforeXp = rpgStats.totalXp;
+    try {
+      await toggleTodo(id);
+      if (task && !task.completed) rewardCompletion(task, beforeXp);
+    } finally { completionInFlight.current.delete(id); }
+  };
+
+  const handleMoveTaskStatus = async (taskId: string, newStatus: TaskStatus) => {
+    if (completionInFlight.current.has(taskId)) return;
+    completionInFlight.current.add(taskId);
+    const task = todos.find(t => t.id === taskId);
+    const beforeXp = rpgStats.totalXp;
+    try {
+      await moveTaskStatus(taskId, newStatus);
+      if (task && newStatus === 'completed' && !task.completed) rewardCompletion(task, beforeXp);
+    } finally { completionInFlight.current.delete(taskId); }
+  };
 
   // Estados dos Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -264,7 +307,8 @@ export default function Home() {
         isNotificationModalOpen ||
         isProfileOpen ||
         isGroupsOpen ||
-        isSettingsOpen;
+        isSettingsOpen || isCharacterSheetOpen || !!confirmConfig?.isOpen ||
+        !!document.querySelector('[role="dialog"][aria-modal="true"]');
 
       if (e.key === 'Escape') {
         if (isAnyModalOpen) {
@@ -278,6 +322,7 @@ export default function Home() {
           setIsProfileOpen(false);
           setIsGroupsOpen(false);
           setIsSettingsOpen(false);
+          setIsCharacterSheetOpen(false);
         }
         return;
       }
@@ -318,6 +363,9 @@ export default function Home() {
     isProfileOpen,
     isGroupsOpen,
     isSettingsOpen,
+    isCharacterSheetOpen,
+    setIsCharacterSheetOpen,
+    confirmConfig,
   ]);
 
   const activeGroup = groups.find((g) => g.id === currentGroupId) || null;
@@ -408,6 +456,8 @@ export default function Home() {
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        rpgStats={rpgEnabled ? rpgStats : undefined}
+        onOpenRpg={() => setIsCharacterSheetOpen(true)}
       />
 
       {/* 2. Área Principal à direita */}
@@ -417,8 +467,8 @@ export default function Home() {
           {/* Breadcrumb: < Meu espaço / Hoje */}
           <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
             <span className="text-zinc-400 dark:text-zinc-500 font-normal">&lsaquo;</span>
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => {
                 setCurrentGroupId(null);
                 setFilterStatus('all');
@@ -462,7 +512,7 @@ export default function Home() {
             {/* Estado Real de Sincronização */}
             <div className="flex items-center gap-1.5 text-xs">
               {!user ? (
-                <span 
+                <span
                   className="inline-flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400"
                   title="Modo local. Conectar à sua conta na nuvem para sincronizar entre aparelhos."
                 >
@@ -541,6 +591,7 @@ export default function Home() {
               className="w-11 h-11 flex items-center justify-center rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800">
               <Settings className="w-5 h-5" />
             </button>
+
             {/* Avatar mobile */}
             <button
               type="button"
@@ -775,7 +826,8 @@ export default function Home() {
           {viewMode === 'kanban' ? (
             <KanbanBoard
               todos={filteredTodos}
-              onMoveTask={moveTaskStatus}
+              showRewards={rpgEnabled}
+              onMoveTask={handleMoveTaskStatus}
               onEditTask={handleOpenEdit}
               onDeleteTask={handleDeleteTask}
               onTogglePin={togglePin}
@@ -801,7 +853,8 @@ export default function Home() {
                       <TaskCard
                         key={task.id}
                         task={task}
-                        onToggle={toggleTodo}
+                        showRewards={rpgEnabled}
+                        onToggle={handleToggleTodo}
                         onDelete={handleDeleteTask}
                         onPin={togglePin}
                         onEdit={handleOpenEdit}
@@ -809,7 +862,7 @@ export default function Home() {
                         onAddSubTask={addSubTask}
                         onDeleteSubTask={deleteSubTask}
                         onStartPomodoro={handleStartPomodoro}
-                        onMoveTask={moveTaskStatus}
+                        onMoveTask={handleMoveTaskStatus}
                         isPomodoroActiveTask={pomodoro.isTimerActive && pomodoro.taskId === task.id}
                         groupName={groups.find((g) => g.id === task.groupId)?.name}
                       />
@@ -841,7 +894,8 @@ export default function Home() {
                         <TaskCard
                           key={task.id}
                           task={task}
-                          onToggle={toggleTodo}
+                        showRewards={rpgEnabled}
+                          onToggle={handleToggleTodo}
                           onDelete={handleDeleteTask}
                           onPin={togglePin}
                           onEdit={handleOpenEdit}
@@ -849,7 +903,7 @@ export default function Home() {
                           onAddSubTask={addSubTask}
                           onDeleteSubTask={deleteSubTask}
                           onStartPomodoro={handleStartPomodoro}
-                          onMoveTask={moveTaskStatus}
+                          onMoveTask={handleMoveTaskStatus}
                           isPomodoroActiveTask={pomodoro.isTimerActive && pomodoro.taskId === task.id}
                           groupName={groups.find((g) => g.id === task.groupId)?.name}
                         />
@@ -881,11 +935,12 @@ export default function Home() {
         activeTab={mobileTab}
         onSelectTab={handleMobileTabSelect}
         onOpenGroups={() => setIsGroupsOpen(true)}
+        onOpenRpg={rpgEnabled ? () => setIsCharacterSheetOpen(true) : undefined}
       />
 
       {/* Toast de Desfazer Exclusão */}
       {undoToast && (
-        <div 
+        <div
           role="status"
           aria-live="polite"
           className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 px-4 py-2.5 rounded-xl shadow-xl border border-zinc-700 dark:border-zinc-200 text-xs font-medium animate-in fade-in slide-in-from-bottom-3 duration-200"
@@ -898,6 +953,19 @@ export default function Home() {
           >
             <RotateCcw className="w-3 h-3" /> Desfazer
           </button>
+        </div>
+      )}
+
+      {/* Toast de Recompensa XP */}
+      {xpToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 left-4 right-4 sm:left-auto sm:max-w-sm z-50 flex items-center gap-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 px-4 py-3 rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 text-sm"
+        >
+          <Sparkles className="w-5 h-5 text-[#5b4fe9] shrink-0" />
+          <span>{xpToast.level ? `Nível ${xpToast.level} alcançado! ` : ''}+{xpToast.xp} XP em {xpToast.areaName}.</span>
+          <button type="button" onClick={dismissNotice} aria-label="Dispensar recompensa" className="min-w-11 min-h-11 text-zinc-500">×</button>
         </div>
       )}
 
@@ -935,6 +1003,8 @@ export default function Home() {
         onOpenBackup={() => setIsBackupOpen(true)}
         onOpenNotifications={() => setIsNotificationModalOpen(true)}
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        rpgEnabled={rpgEnabled}
+        onToggleRpg={setRpgEnabled}
       />
 
       <BackupModal
@@ -990,6 +1060,18 @@ export default function Home() {
         status={notificationStatus}
         onStatusChange={setNotificationStatus}
       />
+
+      {/* Modais do Sistema RPG */}
+      <RpgCharacterModal
+        isOpen={isCharacterSheetOpen}
+        onClose={() => setIsCharacterSheetOpen(false)}
+        rpgStats={rpgStats}
+        profile={profile}
+        scopeName={currentGroupId ? groups.find(g => g.id === currentGroupId)?.name || 'Grupo' : 'Seu espaço pessoal'}
+        isGroup={!!currentGroupId}
+        historyError={historyError}
+      />
+
 
       {confirmConfig && confirmConfig.isOpen && (
         <ConfirmModal

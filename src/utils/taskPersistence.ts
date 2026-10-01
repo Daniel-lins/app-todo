@@ -1,4 +1,5 @@
 import type { TodoItem } from '../types/todo';
+import { mergeRpgHistory, readRpgHistory, saveRpgHistory } from './rpgHistory';
 import {
   getContextId, loadContextTodos, saveContextTodos, loadSyncQueue, saveSyncQueue,
   type PendingSyncItem, type StorageLike,
@@ -42,12 +43,16 @@ export function stageTaskChanges(
   userId: string | null, groupId: string | null, next: TodoItem[],
   upserts: TodoItem[], deletes: string[], storage?: StorageLike,
 ) {
+  const before = loadContextTodos(userId, groupId, storage).todos;
+  const history = mergeRpgHistory(readRpgHistory(userId, groupId, storage), before);
+  // Preserve the committed baseline before removal. Unsaved edits never earn XP.
+  saveRpgHistory(userId, groupId, history, storage);
   if (userId) {
     const changed = new Set([...upserts.map(t => t.id), ...deletes]);
     const contextId = getContextId(userId, groupId);
     const operations: PendingSyncItem[] = [
       ...upserts.map(task => ({ taskId: task.id, action: 'upsert' as const, task })),
-      ...deletes.map(taskId => ({ taskId, action: 'delete' as const })),
+      ...deletes.map(taskId => ({ taskId, action: 'delete' as const, task: before.find(t => t.id === taskId) })),
     ].map(op => ({ ...op, id: crypto.randomUUID(), contextId, timestamp: Date.now(), retryCount: 0 }));
     saveSyncQueue(userId, groupId, [
       ...loadSyncQueue(userId, groupId, storage).filter(op => !changed.has(op.taskId)), ...operations,

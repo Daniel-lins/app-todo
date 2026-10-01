@@ -12,7 +12,7 @@ import {
   Loader2, 
   CheckCircle2, 
   Edit3,
-  Sparkles
+  Sparkles,
 } from 'lucide-react';
 import { UserProfile, TaskGroup } from '../types/todo';
 import { useAccessibleModal } from '../hooks/useAccessibleModal';
@@ -29,7 +29,11 @@ interface ProfileModalProps {
   onSignOut: () => void;
 }
 
-const ProfileModalContent: React.FC<Omit<ProfileModalProps, 'profile'> & { profile: UserProfile }> = ({
+const ProfileModalContent: React.FC<
+  Omit<ProfileModalProps, 'profile'> & {
+    profile: UserProfile;
+  }
+> = ({
   isOpen,
   onClose,
   profile,

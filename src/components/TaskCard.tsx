@@ -25,14 +25,17 @@ import {
   DollarSign,
   Folder,
   Users,
+  Sparkles,
 } from 'lucide-react';
 import { TodoItem, TaskStatus, Category } from '../types/todo';
 import { CATEGORIES, PRIORITIES } from '../utils/todoConstants';
 import { triggerConfetti } from '../utils/confetti';
 import { isTodayLocal, isOverdueLocal } from '../utils/dateUtils';
+import { calculateTaskXp } from '../utils/rpgService';
 
 interface TaskCardProps {
   task: TodoItem;
+  showRewards?: boolean;
   onToggle: (id: string) => void;
   onDelete: (id: string) => void;
   onPin: (id: string) => void;
@@ -65,6 +68,7 @@ const getCategoryIcon = (category: Category) => {
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   task,
+  showRewards = true,
   onToggle,
   onDelete,
   onPin,
@@ -88,6 +92,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   const categoryMeta = CATEGORIES[task.category] || CATEGORIES.other;
   const priorityMeta = PRIORITIES[task.priority] || PRIORITIES.medium;
+  const { total: taskXp } = calculateTaskXp(task);
 
   const totalSubs = task.subTasks.length;
   const completedSubs = task.subTasks.filter((s) => s.completed).length;
@@ -379,6 +384,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 <span>{categoryMeta.label}</span>
               </span>
             )}
+
+            {/* XP Recompensa */}
+            {showRewards && <span
+              className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md transition-colors ${
+                task.completed
+                  ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
+              }`}
+              title={task.completed ? `${taskXp} XP contabilizados` : `Concluir esta tarefa concede +${taskXp} XP para sua evolução`}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>{task.completed ? '' : '+'}{taskXp} XP</span>
+            </span>}
 
             {/* Due date tag */}
             {task.dueDate && (

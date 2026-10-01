@@ -15,13 +15,16 @@ import {
   AlertCircle,
   CloudOff,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { TodoItem, TaskStatus } from '../types/todo';
 import { CATEGORIES, PRIORITIES } from '../utils/todoConstants';
 import { triggerConfetti } from '../utils/confetti';
 import { isTodayLocal, isOverdueLocal } from '../utils/dateUtils';
+import { calculateTaskXp } from '../utils/rpgService';
 
 interface KanbanBoardProps {
+  showRewards?: boolean;
   todos: TodoItem[];
   onMoveTask: (taskId: string, newStatus: TaskStatus) => void;
   onEditTask: (task: TodoItem) => void;
@@ -68,6 +71,7 @@ const COLUMNS: ColumnConfig[] = [
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   todos,
+  showRewards = true,
   onMoveTask,
   onEditTask,
   onDeleteTask,
@@ -174,6 +178,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 columnTasks.map((task) => {
                   const cat = CATEGORIES[task.category] || CATEGORIES.other;
                   const prio = PRIORITIES[task.priority] || PRIORITIES.medium;
+                  const { total: taskXp } = calculateTaskXp(task);
                   const isOverdue = !task.completed && isOverdueLocal(task.dueDate);
                   const isToday = !task.completed && isTodayLocal(task.dueDate);
                   const isBeingDragged = draggedTaskId === task.id;
@@ -203,6 +208,14 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                           <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md">
                             {cat.label}
                           </span>
+                          {/* XP badge */}
+                          {showRewards && <span
+                            className="text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-md flex items-center gap-1"
+                            title={task.completed ? `${taskXp} XP contabilizados` : `Concluir esta tarefa concede +${taskXp} XP`}
+                          >
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>{task.completed ? '' : '+'}{taskXp} XP</span>
+                          </span>}
                           {task.pinned && (
                             <button
                               type="button"

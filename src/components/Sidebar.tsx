@@ -12,7 +12,7 @@ import {
   ChevronRight,
   User as UserIcon,
 } from 'lucide-react';
-import { FilterStatus, TaskGroup, UserProfile } from '../types/todo';
+import { FilterStatus, TaskGroup, UserProfile, RpgStats } from '../types/todo';
 import { AVATAR_PRESETS } from '../utils/todoConstants';
 
 interface SidebarProps {
@@ -28,6 +28,8 @@ interface SidebarProps {
   onOpenProfile: () => void;
   onOpenAuth: () => void;
   onOpenSettings: () => void;
+  rpgStats?: RpgStats;
+  onOpenRpg?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -43,6 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenProfile,
   onOpenAuth,
   onOpenSettings,
+  rpgStats,
+  onOpenRpg,
 }) => {
   const avatarPreset = AVATAR_PRESETS.find((a) => a.id === profile?.avatarUrl) || AVATAR_PRESETS[0];
 
@@ -70,8 +74,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </span>
       </div>
 
+      {/* Mini Card RPG / Nível do Herói */}
+      {rpgStats && (
+        <button
+          type="button"
+          onClick={onOpenRpg}
+          title="Abrir evolução deste espaço"
+          className="w-full mt-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-left hover:border-[#5b4fe9] transition-colors group"
+        >
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-4 h-4 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[9px] font-black shrink-0">
+                Nv
+              </span>
+              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                Nível {rpgStats.level}
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 shrink-0">
+              Evolução <ChevronRight className="w-3 h-3" />
+            </span>
+          </div>
+
+          <div className="text-xs text-zinc-600 dark:text-zinc-400 truncate mb-2 font-medium">
+            {rpgStats.title}
+          </div>
+
+          {/* Barra de XP */}
+          <div className="w-full h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-[#5b4fe9] transition-all duration-300"
+              style={{ width: `${rpgStats.progressPercent}%` }}
+            />
+          </div>
+          <div className="flex justify-between items-center text-xs text-zinc-600 dark:text-zinc-400 mt-2 font-medium tabular-nums">
+            <span>{rpgStats.currentLevelXp} / {rpgStats.nextLevelXp} XP</span>
+            <span>{rpgStats.progressPercent}%</span>
+          </div>
+        </button>
+      )}
+
       {/* Main Navigation (Meu espaço) */}
-      <div className="mt-5 flex-1 overflow-y-auto pr-1">
+      <div className="mt-4 flex-1 overflow-y-auto pr-1">
         <div className="px-2.5 text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-1.5">
           Meu espaço
         </div>

@@ -90,5 +90,44 @@ export interface TaskStats {
   overdue: number;
 }
 
+export interface RpgAttribute {
+  id: Category;
+  name: string;
+  areaName: string;
+  description: string;
+  iconName: string;
+  color: string;
+  badgeBg: string;
+  xp: number;
+  level: number;
+  currentLevelXp: number;
+  nextLevelXp: number;
+  progressPercent: number;
+}
+
+export interface RpgBadge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  category?: Category;
+  unlocked: boolean;
+  unlockedAt?: string;
+  progress?: { current: number; total: number };
+}
+
+export interface RpgStats {
+  totalXp: number;
+  level: number;
+  currentLevelXp: number;
+  nextLevelXp: number;
+  progressPercent: number;
+  title: string;
+  attributes: Record<Category, RpgAttribute>;
+  badges: RpgBadge[];
+  tasksCompletedCount: number;
+  pomodoroFocusMinutes: number;
+}
+
 
 

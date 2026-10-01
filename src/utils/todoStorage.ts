@@ -188,11 +188,17 @@ export async function migrateGuestTasksToCloud(
   if (!storage) return { success: false, migratedTasks: [], error: 'Armazenamento indisponível.' };
   let tasks: TodoItem[] = [];
   try {
+    const { readRpgHistory, historyKey, saveRpgHistory } = await import('./rpgHistory');
     const raw = storage.getItem(GUEST_STORAGE_KEY);
     if (!raw) return { success: true, migratedTasks: [] };
     tasks = JSON.parse(raw);
     if (!Array.isArray(tasks)) throw new Error('Backup local inválido.');
-    if (!tasks.length || isOnlyDemoTasks(tasks) || raw === storage.getItem('apptodo_guest_demo_snapshot')) return { success: true, migratedTasks: [] };
+    const originalHistory = storage.getItem(historyKey(null, null));
+    const demoIds = new Set(INITIAL_TODOS.map(t => t.id));
+    const activeIds = new Set(tasks.map(t => t.id));
+    const archived = readRpgHistory(null, null, storage).filter(t => !activeIds.has(t.id) && !demoIds.has(t.id));
+    if ((!tasks.length || isOnlyDemoTasks(tasks) || raw === storage.getItem('apptodo_guest_demo_snapshot')) && !archived.length) return { success: true, migratedTasks: [] };
+    if (isOnlyDemoTasks(tasks) || raw === storage.getItem('apptodo_guest_demo_snapshot')) tasks = [];
     const ownerKey = 'apptodo_guest_migration_owner';
     const owner = storage.getItem(ownerKey);
     if (owner && owner !== userId) return { success: false, migratedTasks: [], error: 'Há uma migração pendente em outra conta.' };
@@ -212,13 +218,37 @@ export async function migrateGuestTasksToCloud(
           return { ...st, id: idMap[key] };
         }) };
     });
+    const archivedMapped = archived.map(task => {
+      idMap[task.id] ||= crypto.randomUUID();
+      return { ...task, id: idMap[task.id], title: 'Evolução preservada', createdAt: new Date().toISOString(),
+        subTasks: task.subTasks.map(st => {
+          const key = `${task.id}:sub:${st.id}`;
+          idMap[key] ||= crypto.randomUUID();
+          return { ...st, id: idMap[key], title: 'Etapa concluída' };
+        }) };
+    });
     storage.setItem(mapKey, JSON.stringify(idMap));
     const incoming = mapped.filter(task => !ids.has(task.id));
     stageTaskChanges(userId, null, [...cache, ...incoming], incoming, [], storage);
+    // Reuse the same atomic task API; snapshots are immediately removed and only
+    // reward evidence remains. Stable IDs make retries safe.
+    if (archivedMapped.length) {
+      const queue = loadSyncQueue(userId, null, storage);
+      const contextId = getContextId(userId, null);
+      saveSyncQueue(userId, null, [
+        ...queue.filter(op => !archivedMapped.some(t => t.id === op.taskId)),
+        ...archivedMapped.map(task => ({ id: crypto.randomUUID(), taskId: task.id, action: 'delete' as const,
+          contextId, task, timestamp: Date.now(), retryCount: 0 })),
+      ], storage);
+    }
     await flushTaskChanges(client, userId, null, storage);
-    if (storage.getItem(GUEST_STORAGE_KEY) === raw) storage.setItem(GUEST_STORAGE_KEY, '[]');
-    storage.removeItem?.(ownerKey);
-    storage.removeItem?.(mapKey);
+    const unchanged = storage.getItem(GUEST_STORAGE_KEY) === raw && storage.getItem(historyKey(null, null)) === originalHistory;
+    if (unchanged) {
+      storage.setItem(GUEST_STORAGE_KEY, '[]');
+      saveRpgHistory(null, null, [], storage);
+      storage.removeItem?.(ownerKey);
+      storage.removeItem?.(mapKey);
+    }
     return { success: true, migratedTasks: tasks };
   } catch (error) {
     return { success: false, migratedTasks: tasks, error: error instanceof Error ? error.message : String(error) };

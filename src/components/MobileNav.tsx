@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Calendar, ListTodo, Users } from 'lucide-react';
+import { Calendar, ListTodo, Users, Zap } from 'lucide-react';
 
 export type MobileTab = 'today' | 'all' | 'groups';
 
@@ -9,12 +9,14 @@ interface MobileNavProps {
   activeTab: MobileTab;
   onSelectTab: (tab: MobileTab) => void;
   onOpenGroups: () => void;
+  onOpenRpg?: () => void;
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
   activeTab,
   onSelectTab,
   onOpenGroups,
+  onOpenRpg,
 }) => {
   return (
     <nav
@@ -51,6 +53,19 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           <ListTodo className="w-5 h-5" />
           <span>Tarefas</span>
         </button>
+
+        {/* Herói RPG */}
+        {onOpenRpg && (
+          <button
+            type="button"
+            onClick={onOpenRpg}
+            aria-label="Abrir evolução deste espaço"
+            className="min-h-11 flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-xs font-medium text-[#5b4fe9] dark:text-[#a59bfb]"
+          >
+            <Zap className="w-5 h-5" />
+            <span>Evolução</span>
+          </button>
+        )}
 
         {/* Grupos */}
         <button

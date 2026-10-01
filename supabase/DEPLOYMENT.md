@@ -24,3 +24,8 @@ Alertas restantes da checagem de segurança:
 - A proteção contra senhas vazadas continua desativada na configuração do Supabase Auth. Não foi alterada nesta implantação. [Configuração e disponibilidade](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
 
 Esta verificação cobre o banco. Não representa publicação do frontend nem teste de entrega de e-mails de recuperação.
+## Atualização de evolução — 01/10/2026
+
+Migração `durable_rpg_history` aplicada ao mesmo projeto remoto. Histórico inicializado das tarefas existentes; gatilhos privados preservam somente evidências de recompensa. Títulos e descrições de tarefas removidas não são arquivados.
+
+Testes locais com PostgreSQL cobrem exclusão, desfazer, reabertura, ciclos de foco, repetição offline, leitura de membros e remoção de grupos. Verificação remota em transação revertida confirmou isolamento de terceiros. Os avisos de segurança anteriores permaneceram: RPCs autenticadas de grupos, intencionais, e proteção contra senhas vazadas desativada. Nenhum novo aviso de segurança foi introduzido.

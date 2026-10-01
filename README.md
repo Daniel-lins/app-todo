@@ -1,6 +1,14 @@
 # AppToDo
 
-Organizador de tarefas com lista, Kanban, subtarefas, grupos e Pomodoro. O modo visitante salva no navegador; contas usam Supabase com cache e fila local de alterações.
+Organizador de tarefas com lista, Kanban, subtarefas, grupos, Pomodoro e Gamificação RPG das Áreas da Vida. O modo visitante salva no navegador; contas usam Supabase com cache e fila local de alterações.
+
+## Sistema RPG e Áreas da Vida
+
+O aplicativo inclui um motor de RPG (*Life RPG*) que transforma tarefas do dia a dia em evolução de personagem:
+- **6 Atributos de Vida**: Trabalho (*Execução & Foco*), Estudo (*Intelecto & Sabedoria*), Saúde (*Vitalidade & Energia*), Finanças (*Prosperidade & Gestão*), Pessoal (*Equilíbrio & Espírito*) e Outros (*Versatilidade & Adaptação*).
+- **XP por Dificuldade**: Prioridade Baixa (+15 XP), Média (+30 XP), Alta (+60 XP) e Urgente (+100 XP), com bônus por subtarefas (+10 XP) e Pomodoros (+20 XP).
+- **Ficha do Herói e Títulos**: Nível geral com barra de progresso, títulos honoríficos (de *Aprendiz da Produtividade* até *Arquimago da Vida*) e 10 medalhas/conquistas desbloqueáveis.
+- **Documentação Detalhada**: Consulte [`docs/RPG_SYSTEM.md`](docs/RPG_SYSTEM.md) para as fórmulas matemáticas e curva de progressão completas.
 
 ## Executar
 
@@ -21,6 +29,8 @@ Para um projeto novo, execute os arquivos de `supabase/migrations` em ordem:
 2. `20260924180000_group_collaboration_and_rls.sql`: convite, associação do proprietário e publicação Realtime.
 3. `20260924200000_add_updated_at_to_tasks.sql`: data de atualização.
 4. `20260925010000_secure_atomic_task_changes.sql`: políticas corretivas, gravação atômica e contadores.
+5. `20260925161529_restrict_trigger_function_execution.sql`: bloqueio da chamada direta de funções de gatilho.
+6. `20261001144958_durable_rpg_history.sql`: histórico durável de evolução, RLS e preservação de recompensas de tarefas removidas offline.
 
 Para uma instalação existente com as migrações de 24/09 aplicadas, a migração corretiva de 25/09 é obrigatória. Ela substitui as políticas das cinco tabelas do aplicativo, impede ingresso direto em grupos e preserva a autoria das tarefas. Revise políticas personalizadas antes de aplicá-la. O bootstrap não substitui tabelas existentes; esquemas externos diferentes precisam ser compatibilizados.
 

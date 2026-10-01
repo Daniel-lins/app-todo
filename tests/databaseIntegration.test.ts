@@ -98,5 +98,44 @@ test('real PostgreSQL migrations, permissions and atomic persistence', async t =
       await assert.rejects(save([{ action: 'delete', id: 'task-a' }, { action: 'unknown' }]), /desconhecida/);
       assert.equal((await db.query("SELECT * FROM public.tasks WHERE id='task-a'")).rows.length, 1);
     });
+    await t.test('RPG history survives deletion and undo, includes subtasks, and reopening reverses completion', async () => {
+      await asUser(owner);
+      const done = snapshot('rpg-done', 'Private title', [{ id: 'rpg-sub', task_id: 'rpg-done', title: 'Secret', completed: true }]);
+      done.task.completed = true;
+      done.task.status = 'completed';
+      await save([done]);
+      await save([{ action: 'delete', id: done.id }]);
+      assert.deepEqual((await db.query("SELECT completed,completed_subtasks,pomodoros,deleted FROM rpg_task_history WHERE task_id='rpg-done'")).rows,
+        [{ completed: true, completed_subtasks: 1, pomodoros: 2, deleted: true }]);
+      await save([done]);
+      assert.equal((await db.query("SELECT * FROM rpg_task_history WHERE task_id='rpg-done'")).rows.length, 1);
+      done.task.completed = false;
+      done.task.status = 'todo';
+      await save([done]);
+      assert.deepEqual((await db.query("SELECT completed,deleted FROM rpg_task_history WHERE task_id='rpg-done'")).rows, [{ completed: false, deleted: false }]);
+    });
+    await t.test('RPG history preserves tasks completed and deleted entirely offline', async () => {
+      await asUser(owner);
+      const done = snapshot('offline-rpg', 'Offline');
+      done.task.completed = true;
+      await save([{ ...done, action: 'delete' }]);
+      assert.equal((await db.query("SELECT * FROM tasks WHERE id='offline-rpg'")).rows.length, 0);
+      assert.deepEqual((await db.query("SELECT completed,deleted FROM rpg_task_history WHERE task_id='offline-rpg'")).rows, [{ completed: true, deleted: true }]);
+      await save([{ ...done, action: 'delete' }]);
+      assert.equal((await db.query("SELECT * FROM rpg_task_history WHERE task_id='offline-rpg'")).rows.length, 1);
+    });
+    await t.test('only members can read group history; clients cannot forge rewards or execute triggers', async () => {
+      await asUser(outsider);
+      assert.equal((await db.query('SELECT * FROM rpg_task_history')).rows.length, 0);
+      await asUser(member);
+      assert.ok((await db.query('SELECT * FROM rpg_task_history')).rows.length > 0);
+      assert.equal((await db.query("UPDATE rpg_task_history SET pomodoros=999 RETURNING task_id")).rows.length, 0);
+      await assert.rejects(db.query('SELECT private.capture_task_rpg()'), /permission denied/);
+    });
+    await t.test('deleting a group cascades its history without recreating orphan rewards', async () => {
+      await asUser(owner);
+      await db.query('DELETE FROM groups WHERE id=$1', [group]);
+      assert.equal((await db.query('SELECT * FROM rpg_task_history WHERE group_id=$1', [group])).rows.length, 0);
+    });
   } finally { await db.close(); }
 });

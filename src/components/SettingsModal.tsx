@@ -11,6 +11,8 @@ interface SettingsModalProps {
   onOpenBackup: () => void;
   onOpenNotifications: () => void;
   onOpenShortcuts: () => void;
+  rpgEnabled: boolean;
+  onToggleRpg: (enabled: boolean) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -19,6 +21,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenBackup,
   onOpenNotifications,
   onOpenShortcuts,
+  rpgEnabled,
+  onToggleRpg,
 }) => {
   const { modalRef } = useAccessibleModal({
     isOpen,
@@ -34,7 +38,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-modal-title"
-        className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-2xl overflow-hidden text-zinc-900 dark:text-zinc-100"
+        className="relative w-full max-w-md max-h-[90dvh] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-2xl overflow-y-auto text-zinc-900 dark:text-zinc-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -58,6 +62,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
+        <label className="flex items-center justify-between gap-4 py-4 mb-3 border-b border-zinc-200 dark:border-zinc-800 cursor-pointer">
+          <span>
+            <span className="block text-sm font-medium">Gamificação</span>
+            <span className="block text-xs text-zinc-600 dark:text-zinc-400 mt-1">Mostrar XP, evolução e recompensas. Seu histórico será preservado.</span>
+          </span>
+          <input type="checkbox" checked={rpgEnabled} onChange={e => onToggleRpg(e.target.checked)} className="w-5 h-5 shrink-0 accent-[#5b4fe9]" />
+        </label>
         {/* Options list */}
         <div className="space-y-3">
           {/* Tema */}
