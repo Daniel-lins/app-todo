@@ -15,6 +15,7 @@ import {
   getMsUntilNextMidnight 
 } from '../utils/dateUtils';
 import { calculateTaskStats } from '../utils/taskDomain';
+import { isInView } from '../utils/planning';
 
 const subscribeHydration = () => () => {};
 
@@ -77,9 +78,7 @@ export function useTaskFilters(todos: TodoItem[]) {
         if (filterStatus === 'active' && task.completed) return false;
         if (filterStatus === 'completed' && !task.completed) return false;
         if (filterStatus === 'pinned' && !task.pinned) return false;
-        if (filterStatus === 'today') {
-          if (task.dueDate !== todayDateStr) return false;
-        }
+        if (!isInView(task, filterStatus, todayDateStr)) return false;
 
         // Category filter
         if (filterCategory !== 'all' && task.category !== filterCategory) return false;

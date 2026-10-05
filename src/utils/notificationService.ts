@@ -197,7 +197,7 @@ export const NOTIFICATION_LIMITS_DOC = {
   description:
     'Notificações de prazos e Pomodoro são emitidas enquanto o aplicativo estiver aberto em uma aba do navegador.',
   backgroundLimits:
-    'Navegadores não executam timers nem emitem notificações web quando todas as abas e o navegador estão fechados sem um servidor dedicado de Web Push (VAPID).',
+    'Com uma conta e os lembretes em segundo plano ativados neste dispositivo, os prazos também podem chegar por Web Push com a aba fechada. Pomodoro depende da sessão aberta.',
   antiSpam:
     'Cada prazo de tarefa é notificado no máximo uma vez para evitar alertas repetidos.',
 };

@@ -11,7 +11,7 @@ test('real PostgreSQL migrations, permissions and atomic persistence', async t =
   const group = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   try {
     await db.exec(`CREATE SCHEMA auth;
-      CREATE ROLE authenticated; CREATE ROLE anon;
+      CREATE ROLE authenticated; CREATE ROLE anon; CREATE ROLE service_role BYPASSRLS;
       CREATE TABLE auth.users(id uuid PRIMARY KEY);
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
         $$ SELECT nullif(current_setting('test.user_id', true), '')::uuid $$;
@@ -162,6 +162,46 @@ test('real PostgreSQL migrations, permissions and atomic persistence', async t =
       await assert.rejects(save([{ ...mission, subtasks: [] }]), /pelo menos uma etapa/);
       await asUser(outsider);
       assert.equal((await db.query("SELECT * FROM rpg_task_history WHERE task_id='mission-cnh'")).rows.length, 0);
+    });
+    await t.test('planning and ordered stage details persist; completed author cannot be forged', async () => {
+      await asUser(owner);
+      const planned = snapshot('planned', 'Planned', [{ id: 'planned-step', task_id: 'planned', title: 'Stage', completed: true, notes: 'Evidence', due_date: '2026-10-09', position: 2, completed_by: outsider }]);
+      Object.assign(planned.task, { planning: { recurrence: 'weekly', assigned_to: member } });
+      await save([planned]);
+      assert.deepEqual((await db.query("SELECT notes,due_date::text,position,completed_by FROM public.subtasks WHERE id='planned-step'")).rows, [{ notes: 'Evidence', due_date: '2026-10-09', position: 2, completed_by: owner }]);
+      Object.assign(planned.task, { planning: { assigned_to: outsider } });
+      await assert.rejects(save([planned]), /responsável/);
+      assert.equal((await db.query<{ planning: { recurrence: string } }>("SELECT planning FROM public.tasks WHERE id='planned'")).rows[0].planning.recurrence, 'weekly');
+    });
+    await t.test('comments require group access and the real author, outsiders cannot read or post', async () => {
+      await asUser(member);
+      await db.query('INSERT INTO public.task_comments(task_id,author_id,body) VALUES ($1,$2,$3)', ['planned', member, 'Minha atualização']);
+      await assert.rejects(db.query('INSERT INTO public.task_comments(task_id,author_id,body) VALUES ($1,$2,$3)', ['planned', owner, 'Forged']), /row-level/);
+      await asUser(outsider);
+      assert.equal((await db.query('SELECT * FROM public.task_comments')).rows.length, 0);
+      await assert.rejects(db.query('INSERT INTO public.task_comments(task_id,author_id,body) VALUES ($1,$2,$3)', ['planned', outsider, 'Outside']), /row-level/);
+    });
+    await t.test('push config and dispatcher are unavailable to users; subscriptions are scoped', async () => {
+      await asUser(owner);
+      await assert.rejects(db.query('SELECT public.get_push_config()'), /permission denied/);
+      await assert.rejects(db.query('SELECT public.claim_push_reminders()'), /permission denied/);
+      await assert.rejects(db.query("INSERT INTO public.push_subscriptions(user_id,endpoint,p256dh,auth,timezone) VALUES ($1,'https://fcm.googleapis.com/test','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','aaaaaaaaaaaaaaaaaaaaaa','Invalid/TZ')", [owner]), /Fuso/);
+      await assert.rejects(db.query("INSERT INTO public.push_subscriptions(user_id,endpoint,p256dh,auth) VALUES ($1,'https://localhost/private','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','aaaaaaaaaaaaaaaaaaaaaa')", [owner]), /check constraint/);
+      await db.query("INSERT INTO public.push_subscriptions(user_id,endpoint,p256dh,auth,timezone) VALUES ($1,'https://fcm.googleapis.com/test','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','aaaaaaaaaaaaaaaaaaaaaa','UTC')", [owner]);
+      await asUser(outsider);
+      assert.equal((await db.query('SELECT * FROM public.push_subscriptions')).rows.length, 0);
+      await db.exec('RESET ROLE');
+      await db.query("UPDATE public.tasks SET due_date=(now() AT TIME ZONE 'UTC')::date,due_time=(now() AT TIME ZONE 'UTC')::time WHERE id='planned'");
+      await db.exec('SET ROLE service_role');
+      // Owner is not assigned to this task: no reminder is claimed.
+      assert.deepEqual((await db.query<{ result: unknown[] }>('SELECT public.claim_push_reminders() result')).rows[0].result, []);
+      await db.exec('RESET ROLE');
+      await db.query("UPDATE public.tasks SET planning='{}'::jsonb WHERE id='planned'");
+      await db.exec('SET ROLE service_role');
+      assert.equal((await db.query<{ result: unknown[] }>('SELECT public.claim_push_reminders() result')).rows[0].result.length, 1);
+      assert.deepEqual((await db.query<{ result: unknown[] }>('SELECT public.claim_push_reminders() result')).rows[0].result, []);
+      await db.query("UPDATE public.push_deliveries SET delivered=true");
+      assert.deepEqual((await db.query<{ result: unknown[] }>('SELECT public.claim_push_reminders() result')).rows[0].result, []);
     });
     await t.test('deleting a group cascades its history without recreating orphan rewards', async () => {
       await asUser(owner);

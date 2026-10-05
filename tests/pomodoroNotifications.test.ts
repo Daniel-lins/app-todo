@@ -182,7 +182,7 @@ describe('Pomodoro Confiável: Relógio Controlado e Resistência a Atrasos', ()
 describe('Notificações Honestas e Prevenção de Avisos Duplicados', () => {
   it('Documentação dos limites reais e transparência de segundo plano', () => {
     assert.ok(NOTIFICATION_LIMITS_DOC.capability.includes('aba aberta'));
-    assert.ok(NOTIFICATION_LIMITS_DOC.backgroundLimits.includes('fechados sem um servidor'));
+    assert.ok(NOTIFICATION_LIMITS_DOC.backgroundLimits.includes('Web Push') && NOTIFICATION_LIMITS_DOC.backgroundLimits.includes('Pomodoro depende'));
     assert.ok(NOTIFICATION_LIMITS_DOC.antiSpam.includes('no máximo uma vez'));
   });
 

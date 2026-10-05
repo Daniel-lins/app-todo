@@ -10,6 +10,10 @@ export interface SubTask {
   id: string;
   title: string;
   completed: boolean;
+  notes?: string;
+  dueDate?: string;
+  completedBy?: string;
+  completedAt?: string;
 }
 
 export type TaskSyncState = 'synced' | 'syncing' | 'local_only' | 'error';
@@ -18,6 +22,10 @@ export type AppSyncStatus = 'synced' | 'syncing' | 'local_only' | 'error';
 export interface TodoItem {
   id: string;
   kind?: 'task' | 'mission';
+  recurrence?: 'daily' | 'weekly' | 'monthly';
+  recurrenceSeriesId?: string;
+  recurrenceAnchorDay?: number;
+  assignedTo?: string;
   title: string;
   description?: string;
   completed: boolean;
@@ -40,7 +48,7 @@ export interface TodoItem {
   updatedAt?: string;
 }
 
-export type FilterStatus = 'all' | 'active' | 'completed' | 'pinned' | 'today';
+export type FilterStatus = 'all' | 'active' | 'completed' | 'pinned' | 'today' | 'missions' | 'week' | 'achievements';
 
 export type SortOption = 'createdAt_desc' | 'createdAt_asc' | 'dueDate_asc' | 'dueDate_desc' | 'priority_desc' | 'alphabetical';
 

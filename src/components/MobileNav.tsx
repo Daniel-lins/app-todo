@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Calendar, ListTodo, Users, Zap } from 'lucide-react';
+import { Calendar, ListTodo, Users, Flag, Trophy } from 'lucide-react';
 
-export type MobileTab = 'today' | 'all' | 'groups';
+export type MobileTab = 'today' | 'all' | 'groups' | 'missions' | 'achievements';
 
 interface MobileNavProps {
   activeTab: MobileTab;
@@ -16,7 +16,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   activeTab,
   onSelectTab,
   onOpenGroups,
-  onOpenRpg,
 }) => {
   return (
     <nav
@@ -29,7 +28,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           type="button"
           onClick={() => onSelectTab('today')}
           aria-current={activeTab === 'today' ? 'page' : undefined}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-xs font-medium transition-colors ${
+          className={`flex flex-col items-center gap-0.5 min-h-11 py-1 px-1 rounded-lg text-xs font-medium transition-colors ${
             activeTab === 'today'
               ? 'text-[#5b4fe9] font-semibold'
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -44,7 +43,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           type="button"
           onClick={() => onSelectTab('all')}
           aria-current={activeTab === 'all' ? 'page' : undefined}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-xs font-medium transition-colors ${
+          className={`flex flex-col items-center gap-0.5 min-h-11 py-1 px-1 rounded-lg text-xs font-medium transition-colors ${
             activeTab === 'all'
               ? 'text-[#5b4fe9] font-semibold'
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
@@ -54,18 +53,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
           <span>Tarefas</span>
         </button>
 
-        {/* Herói RPG */}
-        {onOpenRpg && (
-          <button
-            type="button"
-            onClick={onOpenRpg}
-            aria-label="Abrir evolução deste espaço"
-            className="min-h-11 flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-xs font-medium text-[#5b4fe9] dark:text-[#a59bfb]"
-          >
-            <Zap className="w-5 h-5" />
-            <span>Evolução</span>
-          </button>
-        )}
+        {([{ id: 'missions', label: 'Missões', Icon: Flag }, { id: 'achievements', label: 'Conquistas', Icon: Trophy }] as const).map(({ id, label, Icon }) => <button key={id} type="button" onClick={() => onSelectTab(id)} aria-current={activeTab === id ? 'page' : undefined} className={`min-h-11 flex flex-col items-center gap-0.5 py-1 px-1 rounded-lg text-[11px] font-medium ${activeTab === id ? 'text-[#5b4fe9] dark:text-[#a59bfb]' : 'text-zinc-500 dark:text-zinc-400'}`}><Icon className="w-5 h-5" /><span>{label}</span></button>)}
 
         {/* Grupos */}
         <button
@@ -75,7 +63,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
             onOpenGroups();
           }}
           aria-current={activeTab === 'groups' ? 'page' : undefined}
-          className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg text-xs font-medium transition-colors ${
+          className={`flex flex-col items-center gap-0.5 min-h-11 py-1 px-1 rounded-lg text-xs font-medium transition-colors ${
             activeTab === 'groups'
               ? 'text-[#5b4fe9] font-semibold'
               : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'

@@ -33,3 +33,13 @@ Testes locais com PostgreSQL cobrem exclusão, desfazer, reabertura, ciclos de f
 ## Missões pessoais — 01/10/2026
 
 Migração `personal_mission_achievements` aplicada ao projeto remoto. Tarefas existentes mantêm o tipo normal; missões são uma escolha explícita. O histórico preserva nome do objetivo, data e contagem de etapas. Teste autenticado em transação revertida confirmou a conquista após excluir a missão. A suíte PostgreSQL também verifica etapas pendentes, repetição, restauração e isolamento de terceiros. Nenhum novo aviso de segurança foi introduzido.
+
+## Planejamento, colaboração e lembretes — 05/10/2026
+
+Aplicadas `planning_and_collaboration`, `background_reminders` e `reminder_scheduler`. A função `send-reminders` está ativa e recebe chamadas autenticadas pelo segredo privado do cron `apptodo-deadline-reminders`, a cada minuto. Chaves foram provisionadas após autorização explícita do usuário e não estão no repositório.
+
+A implementação aceita as colunas de prazo legadas em texto do projeto remoto e as colunas tipadas do bootstrap local. Verificação remota em transação revertida confirmou notas/ordem das etapas e bloqueio de conclusão antecipada. As chamadas do cron retornaram HTTP 200; a entrega ao dispositivo exige consentimento e inscrição de Web Push.
+
+O novo RPC autenticado `get_push_public_key` retorna somente a chave pública; `get_push_config` e `claim_push_reminders` são exclusivos do servidor. Os avisos de RLS sem política em configuração privada e entregas são intencionais: clientes não recebem acesso a essas tabelas. A proteção contra senhas vazadas continua pendente nas configurações de Auth.
+
+Detalhes e limites: [registro dos ajustes](../docs/ajustes-2026-10-05.md).

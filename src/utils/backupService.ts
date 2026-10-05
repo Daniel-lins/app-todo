@@ -4,6 +4,7 @@
  * limites de segurança, detecção de conflitos e isolamento de dados.
  */
 
+import { mergeRpgHistory, parseRpgHistory, rewardSnapshot } from './rpgHistory';
 import { TodoItem, Priority, Category, TaskStatus, SubTask } from '../types/todo';
 
 export const CURRENT_BACKUP_VERSION = 2;
@@ -22,9 +23,11 @@ export interface BackupFileV2 {
   spaceName?: string;
   tasksCount: number;
   todos: TodoItem[];
+  rewardHistory?: TodoItem[];
 }
 
 export interface BackupValidationResult {
+  rewardHistory?: TodoItem[];
   valid: boolean;
   error?: string;
   todos: TodoItem[];
@@ -39,11 +42,12 @@ export interface BackupValidationResult {
  * Gera os dados de exportação em formato versionado (V2),
  * omitindo estritamente credenciais, tokens ou dados sensíveis de conta.
  */
-export function generateBackupData(todos: TodoItem[], spaceName?: string): string {
+export function generateBackupData(todos: TodoItem[], spaceName?: string, rewardHistory: TodoItem[] = []): string {
   // Limpa campos internos sensíveis se existirem e preserva apenas dados de domínio das tarefas
   const cleanTodos: TodoItem[] = todos.map((t, idx) => ({
     id: t.id,
     kind: t.kind === 'mission' ? 'mission' : 'task',
+    recurrence: t.recurrence, recurrenceSeriesId: t.recurrenceSeriesId, recurrenceAnchorDay: t.recurrenceAnchorDay,
     title: t.title.trim(),
     description: t.description ? t.description.trim() : undefined,
     completed: !!t.completed,
@@ -60,7 +64,7 @@ export function generateBackupData(todos: TodoItem[], spaceName?: string): strin
     subTasks: (t.subTasks || []).map((st) => ({
       id: st.id,
       title: st.title.trim(),
-      completed: !!st.completed,
+      completed: !!st.completed, notes: st.notes, dueDate: st.dueDate, completedAt: st.completedAt,
     })),
     // groupId do espaço original apenas como metadado informativo
     groupId: t.groupId || undefined,
@@ -73,6 +77,7 @@ export function generateBackupData(todos: TodoItem[], spaceName?: string): strin
     spaceName: spaceName || 'Espaço Pessoal',
     tasksCount: cleanTodos.length,
     todos: cleanTodos,
+    rewardHistory: mergeRpgHistory(rewardHistory, todos).map(rewardSnapshot),
   };
 
   return JSON.stringify(backupPayload, null, 2);
@@ -170,6 +175,16 @@ export function validateAndParseBackupFile(
       conflictsWithExisting: 0,
       duplicateIdsFound: 0,
     };
+  }
+
+  let rewardHistory: TodoItem[] = [];
+  if (!Array.isArray(parsed) && 'rewardHistory' in parsed) {
+    const raw = (parsed as { rewardHistory: unknown }).rewardHistory;
+    rewardHistory = parseRpgHistory(JSON.stringify(raw));
+    if (!Array.isArray(raw) || raw.length > 10000 || rewardHistory.length !== raw.length || rewardHistory.some(t => t.subTasks.length > MAX_SUBTASKS_PER_TASK || (t.kind === 'mission' && (typeof t.title !== 'string' || !t.title.trim() || !t.subTasks.length || (t.completed && t.subTasks.some(s => !s.completed)))) || (t.completedAt && Number.isNaN(Date.parse(t.completedAt))))) {
+      return { valid: false, error: 'O histórico de progresso do backup é inválido.', todos: [], version, totalTasks: 0, totalSubTasks: 0, conflictsWithExisting: 0, duplicateIdsFound: 0 };
+    }
+    rewardHistory = rewardHistory.map(rewardSnapshot);
   }
 
   // 4. Limite de quantidade de tarefas
@@ -398,6 +413,9 @@ export function validateAndParseBackupFile(
           id: typeof subObj.id === 'string' && subObj.id.trim() ? subObj.id.trim() : `sub-${Date.now()}-${i}-${s}`,
           title: subObj.title.trim(),
           completed: !!subObj.completed,
+          notes: typeof subObj.notes === 'string' ? subObj.notes.slice(0, 5000) : undefined,
+          dueDate: typeof subObj.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(subObj.dueDate) ? subObj.dueDate : undefined,
+          completedAt: typeof subObj.completedAt === 'string' && !Number.isNaN(Date.parse(subObj.completedAt)) ? subObj.completedAt : undefined,
         });
         totalSubTasks++;
       }
@@ -411,6 +429,9 @@ export function validateAndParseBackupFile(
       id,
       title: obj.title.trim(),
       kind: obj.kind === 'mission' ? 'mission' : 'task',
+      recurrence: obj.kind !== 'mission' && ['daily', 'weekly', 'monthly'].includes(String(obj.recurrence)) ? obj.recurrence as TodoItem['recurrence'] : undefined,
+      recurrenceSeriesId: typeof obj.recurrenceSeriesId === 'string' ? obj.recurrenceSeriesId : undefined,
+      recurrenceAnchorDay: typeof obj.recurrenceAnchorDay === 'number' && obj.recurrenceAnchorDay >= 1 && obj.recurrenceAnchorDay <= 31 ? obj.recurrenceAnchorDay : undefined,
       description: typeof obj.description === 'string' && obj.description.trim() ? obj.description.trim() : undefined,
       completed,
       status,
@@ -433,6 +454,7 @@ export function validateAndParseBackupFile(
 
   return {
     valid: true,
+    rewardHistory,
     todos: validatedTodos,
     version,
     totalTasks: validatedTodos.length,

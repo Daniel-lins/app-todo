@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { TodoItem, TaskStatus } from '../types/todo';
 import { CATEGORIES, PRIORITIES } from '../utils/todoConstants';
-import { triggerConfetti } from '../utils/confetti';
 import { isTodayLocal, isOverdueLocal } from '../utils/dateUtils';
 import { calculateTaskXp } from '../utils/rpgService';
 
@@ -118,9 +117,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     e.preventDefault();
     const taskId = e.dataTransfer.getData('text/plain') || draggedTaskId;
     if (taskId) {
-      if (status === 'completed') {
-        triggerConfetti();
-      }
       onMoveTask(taskId, status);
     }
     setDraggedTaskId(null);
@@ -368,7 +364,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                               type="button"
                               onClick={() => {
                                 const next = col.id === 'todo' ? 'in_progress' : 'completed';
-                                if (next === 'completed') triggerConfetti();
                                 onMoveTask(task.id, next);
                               }}
                               title="Mover para direita"

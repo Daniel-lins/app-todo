@@ -18,6 +18,7 @@ import {
   prepareDemoTodos,
   prepareImportTodos,
   loadSyncQueue,
+  saveSyncQueue,
   migrateGuestTasksToCloud,
   mergeCloudTasksWithLocal,
   getStorageKey,
@@ -29,6 +30,9 @@ import {
   sanitizeTaskUpdates
 } from '../utils/taskDomain';
 
+import { readRpgHistory, saveRpgHistory, mergeRpgHistory } from '../utils/rpgHistory';
+import { prepareFullRestore } from '../utils/backupRestore';
+import { nextOccurrence } from '../utils/planning';
 import { stageTaskChanges, flushTaskChanges } from '../utils/taskPersistence';
 import { useAuthSession } from './useAuthSession';
 import { useUserGroups } from './useUserGroups';
@@ -78,6 +82,7 @@ export function useTodos() {
   interface SupabaseTaskRow {
     id: string;
     kind?: TodoItem['kind'];
+    planning?: { recurrence?: TodoItem['recurrence']; series_id?: string; anchor_day?: number; assigned_to?: string };
     title: string;
     description?: string | null;
     completed: boolean;
@@ -100,6 +105,7 @@ export function useTodos() {
       id: string;
       title: string;
       completed: boolean;
+      notes?: string; due_date?: string; position?: number; completed_by?: string; completed_at?: string;
     }>;
   }
 
@@ -107,6 +113,8 @@ export function useTodos() {
     return {
       id: row.id,
       kind: row.kind || 'task',
+      recurrence: row.planning?.recurrence || undefined, recurrenceSeriesId: row.planning?.series_id || undefined,
+      recurrenceAnchorDay: row.planning?.anchor_day || undefined, assignedTo: row.planning?.assigned_to || undefined,
       title: row.title,
       description: row.description || undefined,
       completed: row.completed,
@@ -114,7 +122,7 @@ export function useTodos() {
       priority: row.priority,
       category: row.category,
       dueDate: row.due_date || undefined,
-      dueTime: row.due_time || undefined,
+      dueTime: row.due_time?.slice(0,5) || undefined,
       pinned: row.pinned,
       createdAt: row.created_at,
       completedAt: row.completed_at || undefined,
@@ -125,10 +133,11 @@ export function useTodos() {
       createdByName: row.created_by_name || undefined,
       syncState: 'synced',
       updatedAt: row.updated_at,
-      subTasks: (row.subtasks || []).map((st) => ({
+      subTasks: (row.subtasks || []).sort((a, b) => (a.position || 0) - (b.position || 0)).map((st) => ({
         id: st.id,
         title: st.title,
-        completed: st.completed,
+        completed: st.completed, notes: st.notes || undefined, dueDate: st.due_date || undefined,
+        completedBy: st.completed_by || undefined, completedAt: st.completed_at || undefined,
       })),
     };
   }, []);
@@ -268,6 +277,7 @@ export function useTodos() {
             description,
             completed,
             kind,
+            planning,
             status,
             priority,
             category,
@@ -285,7 +295,7 @@ export function useTodos() {
             subtasks (
               id,
               title,
-              completed
+              completed, notes, due_date, position, completed_by, completed_at
             )
           `)
           .order('order_index', { ascending: true });
@@ -558,7 +568,8 @@ export function useTodos() {
       createdByName: profile?.displayName || user?.email?.split('@')[0],
       subTasks: taskData.subTasks || [],
     };
-    await persist([newTask, ...current], [newTask]);
+    const validated = { ...newTask, ...sanitizeTaskUpdates(newTask, newTask).cleanUpdates };
+    await persist([validated, ...current], [validated]);
   }, [readCurrent, currentGroupId, profile, user, persist]);
 
   const updateTodo = useCallback(async (id: string, updates: Partial<Omit<TodoItem, 'id' | 'createdAt'>>) => {
@@ -567,7 +578,12 @@ export function useTodos() {
     if (!original) return;
     const { cleanUpdates } = sanitizeTaskUpdates(updates, original);
     const updated = { ...original, ...cleanUpdates };
-    await persist(current.map(t => t.id === id ? updated : t), [updated]);
+    if (updated.recurrence !== original.recurrence || updated.dueDate !== original.dueDate) updated.recurrenceAnchorDay = undefined;
+    const successor = !original.completed && updated.completed ? nextOccurrence(updated) : null;
+    const next = current.map(t => t.id === id ? updated : t);
+    const upserts = [updated];
+    if (successor && !current.some(t => t.id === successor.id)) { next.unshift(successor); upserts.push(successor); }
+    await persist(next, upserts);
 
   }, [readCurrent, persist]);
 
@@ -613,10 +629,11 @@ export function useTodos() {
     await persist(remaining, [], removed.map(t => t.id));
   }, [readCurrent, persist]);
 
-  const replaceList = useCallback(async (next: TodoItem[]) => {
+  const replaceList = useCallback(async (next: TodoItem[], beforeHistory?: TodoItem[]) => {
     const before = readCurrent();
     // Recoverable snapshot before any bulk replacement.
     localStorage.setItem(`${getStorageKey(user?.id, currentGroupId)}_before_import`, JSON.stringify(before));
+    localStorage.setItem(`${getStorageKey(user?.id, currentGroupId)}_history_before_import`, JSON.stringify(beforeHistory || mergeRpgHistory(readRpgHistory(user?.id || null, currentGroupId), before)));
     const ids = new Set(next.map(t => t.id));
     const success = await persist(next, next, before.filter(t => !ids.has(t.id)).map(t => t.id));
     return { synced: success, localOnly: !user };
@@ -624,9 +641,27 @@ export function useTodos() {
   const resetToDemo = useCallback(async (mode: 'append' | 'replace' = 'append') => {
     return replaceList(prepareDemoTodos(readCurrent(), mode, currentGroupId));
   }, [readCurrent, currentGroupId, replaceList]);
-  const importTodos = useCallback(async (items: TodoItem[], mode: 'merge' | 'replace') => {
-    return replaceList(prepareImportTodos(readCurrent(), items, mode, currentGroupId));
-  }, [readCurrent, currentGroupId, replaceList]);
+  const importTodos = useCallback(async (items: TodoItem[], mode: 'merge' | 'replace', rewards: TodoItem[] = []) => {
+    if (!rewards.length) return replaceList(prepareImportTodos(readCurrent(), items, mode, currentGroupId));
+    const owner = user?.id || null;
+    const current = readCurrent();
+    const existingHistory = mergeRpgHistory(readRpgHistory(owner, currentGroupId), current);
+    const { next, archived, newArchives } = prepareFullRestore(current, existingHistory, items, rewards, getContextId(owner, currentGroupId), currentGroupId, mode);
+    const before = existingHistory;
+    localStorage.setItem(`${getStorageKey(owner, currentGroupId)}_history_before_import`, JSON.stringify(before));
+    saveRpgHistory(owner, currentGroupId, mergeRpgHistory(existingHistory, archived));
+    if (owner) {
+      const queue = loadSyncQueue(owner, currentGroupId);
+      const queued = new Set(queue.map(op => op.taskId));
+      const restored = newArchives.filter(t => !queued.has(t.id)).map(t => {
+        const task = { ...t, title: t.title || 'Progresso restaurado', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+          subTasks: t.subTasks.map((st, i) => ({ ...st, id: `${t.id}:step:${i}`, title: `Etapa ${i + 1}` })) };
+        return { id: crypto.randomUUID(), taskId: task.id, task, action: 'delete' as const, contextId: getContextId(owner, currentGroupId), timestamp: Date.now(), retryCount: 0 };
+      });
+      saveSyncQueue(owner, currentGroupId, [...queue, ...restored]);
+    }
+    return replaceList(next, before);
+  }, [readCurrent, currentGroupId, user, replaceList]);
   const reorderTodos = useCallback(async (ordered: TodoItem[]) => {
     const next = ordered.map((task, order) => ({ ...task, order, updatedAt: new Date().toISOString() }));
     await persist(next, next);
@@ -720,6 +755,9 @@ export function useTodos() {
     reorderTodos,
     incrementPomodoro,
     importTodos,
+    getPreviousRewardHistory: () => {
+      try { return JSON.parse(localStorage.getItem(`${getStorageKey(user?.id, currentGroupId)}_history_before_import`) || '[]') as TodoItem[]; } catch { return []; }
+    },
     getPreviousBackup: () => {
       try {
         const raw = localStorage.getItem(`${getStorageKey(user?.id, currentGroupId)}_before_import`);

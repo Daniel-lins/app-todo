@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import { TodoItem, TaskStatus, Category } from '../types/todo';
 import { CATEGORIES, PRIORITIES } from '../utils/todoConstants';
-import { triggerConfetti } from '../utils/confetti';
 import { isTodayLocal, isOverdueLocal } from '../utils/dateUtils';
 import { calculateTaskXp } from '../utils/rpgService';
 
@@ -47,6 +46,7 @@ interface TaskCardProps {
   onMoveTask?: (taskId: string, newStatus: TaskStatus) => void;
   isPomodoroActiveTask?: boolean;
   groupName?: string;
+  assignedToName?: string;
 }
 
 const getCategoryIcon = (category: Category) => {
@@ -80,6 +80,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   onMoveTask,
   isPomodoroActiveTask = false,
   groupName,
+  assignedToName,
 }) => {
   const [showSubtasks, setShowSubtasks] = useState(false);
   const [newSubTaskTitle, setNewSubTaskTitle] = useState('');
@@ -102,9 +103,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const isToday = !task.completed && isTodayLocal(task.dueDate);
 
   const handleToggle = () => {
-    if (!task.completed) {
-      triggerConfetti();
-    }
     onToggle(task.id);
   };
 
@@ -322,7 +320,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                               type="button"
                               onClick={() => {
                                 setIsMenuOpen(false);
-                                if (!task.completed) triggerConfetti();
                                 onMoveTask(task.id, 'completed');
                               }}
                               className={`flex-1 text-[11px] py-1 rounded text-center transition-colors ${
@@ -358,7 +355,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           </div>
 
           {/* Optional description */}
-          {task.description && (
+          {assignedToName && <p className="text-xs text-indigo-600 dark:text-indigo-400">Responsável: {assignedToName}</p>}
+              {task.description && (
             <p
               className={`mt-1 text-xs sm:text-sm leading-relaxed break-words line-clamp-2 ${
                 task.completed
@@ -386,6 +384,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               </span>
             )}
 
+            {task.recurrence && <span>Repete {task.recurrence === 'daily' ? 'diariamente' : task.recurrence === 'weekly' ? 'semanalmente' : 'mensalmente'}</span>}
+            {task.createdByName && task.groupId && <span>Criada por {task.createdByName}</span>}
             {/* XP Recompensa */}
             {showRewards && <span
               className={`inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md transition-colors ${

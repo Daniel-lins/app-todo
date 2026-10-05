@@ -3,6 +3,7 @@
 import React from 'react';
 import { Settings, X, Moon, Bell, Database, Keyboard, ChevronRight } from 'lucide-react';
 import { useAccessibleModal } from '../hooks/useAccessibleModal';
+import { AppInstallButton } from './AppInstallButton';
 import { ThemeToggle } from './ThemeToggle';
 
 interface SettingsModalProps {
@@ -41,6 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         className="relative w-full max-w-md max-h-[90dvh] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-2xl overflow-y-auto text-zinc-900 dark:text-zinc-100"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="mb-4"><AppInstallButton /></div>
         {/* Header */}
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-3">

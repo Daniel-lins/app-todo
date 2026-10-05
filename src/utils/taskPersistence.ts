@@ -12,6 +12,7 @@ export interface TaskTransport {
 export function taskPayload(task: TodoItem, userId: string, groupId: string | null) {
   return {
     id: task.id, user_id: userId, group_id: groupId, title: task.title, kind: task.kind || 'task',
+    planning: { recurrence: task.recurrence || null, series_id: task.recurrenceSeriesId || null, anchor_day: task.recurrenceAnchorDay || null, assigned_to: task.assignedTo || null },
     description: task.description || null, completed: task.completed,
     status: task.status || (task.completed ? 'completed' : 'todo'),
     priority: task.priority, category: task.category, due_date: task.dueDate || null,
@@ -32,7 +33,8 @@ export async function sendTaskChanges(
     p_changes: operations.map(op => ({
       action: op.action, id: op.taskId,
       task: op.task ? taskPayload(op.task, userId, groupId) : null,
-      subtasks: op.task?.subTasks.map(st => ({ ...st, task_id: op.taskId })) || [],
+      subtasks: op.task?.subTasks.map((st, position) => ({ ...st, task_id: op.taskId, position,
+        due_date: st.dueDate || null, notes: st.notes || null, completed_by: st.completedBy || null, completed_at: st.completedAt || null })) || [],
     })),
   });
   if (error) throw new Error(error.message);

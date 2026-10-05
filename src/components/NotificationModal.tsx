@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import { enableBackgroundReminders, disableBackgroundReminders, backgroundRemindersEnabled } from '../utils/backgroundReminders';
 import { 
   Bell, 
   BellRing, 
@@ -20,6 +21,7 @@ import {
 import { useAccessibleModal } from '../hooks/useAccessibleModal';
 
 interface NotificationModalProps {
+  userId?: string;
   isOpen: boolean;
   onClose: () => void;
   status: NotificationStatus;
@@ -28,10 +30,24 @@ interface NotificationModalProps {
 
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   isOpen,
+  userId,
   onClose,
   status,
   onStatusChange,
 }) => {
+  const [pushEnabled, setPushEnabled] = useState(() => backgroundRemindersEnabled(userId));
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushFeedback, setPushFeedback] = useState('');
+  async function togglePush() {
+    if (!userId || pushBusy) return;
+    setPushBusy(true); setPushFeedback('');
+    try {
+      if (pushEnabled) await disableBackgroundReminders(userId); else await enableBackgroundReminders(userId);
+      setPushEnabled(!pushEnabled); onStatusChange('granted');
+      setPushFeedback(pushEnabled ? 'Lembretes deste dispositivo desativados.' : 'Lembretes ativados neste dispositivo, inclusive com a aba fechada.');
+    } catch (error) { setPushFeedback(error instanceof Error ? error.message : 'Não foi possível atualizar os lembretes.'); }
+    finally { setPushBusy(false); }
+  }
   // Hook de acessibilidade: contenção de foco, foco inicial e devolução
   const { modalRef } = useAccessibleModal({
     isOpen,
@@ -63,7 +79,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     >
       <div 
         ref={modalRef}
-        className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-7 shadow-2xl overflow-hidden transition-all"
+        className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-7 shadow-2xl max-h-[90vh] overflow-y-auto transition-all"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -174,6 +190,12 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
             </div>
           )}
 
+          <section className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-2">
+            <h3 className="font-semibold text-sm">Lembretes com a aba fechada</h3>
+            <p>Ative neste dispositivo para avisos próximos ao prazo. Tarefas sem horário avisam por volta das 9h, no seu fuso local. O navegador e o sistema precisam permitir notificações.</p>
+            {userId ? <button type="button" disabled={pushBusy} onClick={togglePush} className="min-h-11 w-full rounded-xl bg-indigo-600 text-white px-4 disabled:opacity-50">{pushBusy ? 'Atualizando…' : pushEnabled ? 'Desativar lembretes deste dispositivo' : 'Ativar lembretes em segundo plano'}</button> : <p className="font-medium">Entre na sua conta para ativar esses lembretes.</p>}
+            {pushFeedback && <p role="status" className="text-sm">{pushFeedback}</p>}
+          </section>
           {/* Transparência e limites honestos */}
           <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-800/60 flex items-start gap-2.5">
             <Info className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />

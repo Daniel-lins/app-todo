@@ -17,6 +17,9 @@ export function transitionTaskStatus(
   nowISO = new Date().toISOString()
 ): TodoItem {
   const willComplete = newStatus === 'completed';
+  if (willComplete && task.kind === 'mission' && (!task.subTasks.length || task.subTasks.some(step => !step.completed))) {
+    throw new Error('Conclua cada etapa antes de finalizar a missão.');
+  }
 
   return {
     ...task,
@@ -42,6 +45,9 @@ export function toggleTaskCompleted(
   const willComplete = !task.completed;
 
   if (willComplete) {
+    if (task.kind === 'mission' && (!task.subTasks.length || task.subTasks.some(step => !step.completed))) {
+      throw new Error('Conclua cada etapa antes de finalizar a missão.');
+    }
     return {
       ...task,
       completed: true,
@@ -84,7 +90,7 @@ export function toggleSubTaskInTask(
   const updatedSubs = task.subTasks.map((st) => {
     if (st.id === subTaskId) {
       subTaskCompleted = !st.completed;
-      return { ...st, completed: subTaskCompleted };
+      return { ...st, completed: subTaskCompleted, completedAt: subTaskCompleted ? nowISO : undefined, completedBy: subTaskCompleted ? st.completedBy : undefined };
     }
     return st;
   });
@@ -140,6 +146,10 @@ export function sanitizeTaskUpdates(
 } {
   const cleanUpdates: Partial<TodoItem> = { updatedAt: nowISO };
   const dbUpdates: Record<string, unknown> = { updated_at: nowISO };
+  if ('recurrence' in updates) cleanUpdates.recurrence = updates.recurrence;
+  if ('recurrenceSeriesId' in updates) cleanUpdates.recurrenceSeriesId = updates.recurrenceSeriesId;
+  if ('recurrenceAnchorDay' in updates) cleanUpdates.recurrenceAnchorDay = updates.recurrenceAnchorDay;
+  if ('assignedTo' in updates) cleanUpdates.assignedTo = updates.assignedTo;
 
   if (updates.kind !== undefined) {
     cleanUpdates.kind = updates.kind === 'mission' ? 'mission' : 'task';
@@ -237,6 +247,11 @@ export function sanitizeTaskUpdates(
     dbUpdates.completed_at = cleanUpdates.completedAt || null;
   }
 
+  const result = { ...currentTask, ...cleanUpdates };
+  if (result.kind === 'mission' && result.completed && (!result.subTasks?.length || result.subTasks.some(step => !step.completed))) {
+    throw new Error('Conclua cada etapa antes de finalizar a missão.');
+  }
+  if (result.kind === 'mission') cleanUpdates.recurrence = undefined;
   return { cleanUpdates, dbUpdates };
 }
 

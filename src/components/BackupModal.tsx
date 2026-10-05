@@ -30,17 +30,21 @@ interface BackupModalProps {
   isOpen: boolean;
   onClose: () => void;
   todos: TodoItem[];
+  rewardHistory?: TodoItem[];
   spaceName: string;
+  getPreviousRewardHistory: () => TodoItem[];
   getPreviousBackup: () => TodoItem[] | null;
-  onImport: (imported: TodoItem[], mode: 'replace' | 'merge') => Promise<{ synced: boolean; localOnly: boolean }>;
+  onImport: (imported: TodoItem[], mode: 'replace' | 'merge', history?: TodoItem[]) => Promise<{ synced: boolean; localOnly: boolean }>;
 }
 
 export const BackupModal: React.FC<BackupModalProps> = ({
   isOpen,
   onClose,
   todos,
+  rewardHistory = [],
   spaceName,
   getPreviousBackup,
+  getPreviousRewardHistory,
   onImport,
 }) => {
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
@@ -61,9 +65,9 @@ export const BackupModal: React.FC<BackupModalProps> = ({
   if (!isOpen) return null;
 
   // Exportação com formato versionado (V2), livre de credenciais e tokens
-  const handleExport = (items: TodoItem[] = todos) => {
+  const handleExport = (items: TodoItem[] = todos, history: TodoItem[] = rewardHistory) => {
     try {
-      const dataStr = generateBackupData(items, spaceName);
+      const dataStr = generateBackupData(items, spaceName, history);
       const blob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const dateStr = new Date().toISOString().split('T')[0];
@@ -74,7 +78,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setSuccessMsg(`Backup de ${items.length} tarefas exportado com sucesso no formato V2!`);
+      setSuccessMsg(`Backup de ${items.length} tarefas e histórico de progresso exportado!`);
       setTimeout(() => setSuccessMsg(null), 3500);
     } catch {
       setError('Erro ao gerar arquivo de exportação.');
@@ -142,7 +146,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
 
   // Execução da importação com espera obrigatória e sem falso sucesso
   const handleConfirmImport = async (forceConfirmed = false) => {
-    if (!validationResult || !validationResult.valid || validationResult.todos.length === 0) return;
+    if (!validationResult || !validationResult.valid || validationResult.todos.length === 0 && !validationResult.rewardHistory?.length) return;
 
     // Se o modo for substituir e ainda não houve confirmação explícita
     if (importMode === 'replace' && !forceConfirmed && todos.length > 0) {
@@ -154,7 +158,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
     setError(null);
     try {
       // Aguarda estritamente a conclusão da persistência (local e nuvem)
-      const result = await onImport(validationResult.todos, importMode);
+      const result = await onImport(validationResult.todos, importMode, validationResult.rewardHistory);
       setSuccessMsg(
         `${validationResult.totalTasks} tarefas ${importMode === 'replace' ? 'substituídas' : 'mescladas'} em ${spaceName}. ${result.localOnly ? 'Salvas neste dispositivo.' : result.synced ? 'Sincronizadas com a nuvem.' : 'Salvas neste dispositivo; sincronização pendente.'}`
       );
@@ -255,7 +259,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
           {getPreviousBackup() !== null && (
             <button type="button" className="min-h-11 text-sm text-[#5b4fe9] underline" onClick={() => {
               const previous = getPreviousBackup();
-              if (previous) handleExport(previous);
+              if (previous) handleExport(previous, getPreviousRewardHistory());
             }}>Baixar cópia anterior à última importação</button>
           )}
           {/* Section 2: Import */}

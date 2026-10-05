@@ -33,6 +33,8 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
   const activeContext = useRef(contextId);
   useEffect(() => { activeContext.current = contextId; }, [contextId]);
 
+  const rewardHistory = useMemo(() => mergeRpgHistory(parseRpgHistory(snapshot), isLoaded ? todos : []), [snapshot, todos, isLoaded]);
+
   const rpgStats = useMemo(() => {
     const current = isLoaded ? todos : [];
     const rewards = mergeRpgHistory(parseRpgHistory(snapshot), current);
@@ -106,7 +108,7 @@ export function useRpg({ todos, userId, groupId, contextId, isLoaded, syncStatus
     setNotice(null);
   }, []);
 
-  return { rpgStats, enabled, setEnabled, historyError: historyError?.context === contextId ? historyError.message : null,
+  return { rpgStats, rewardHistory, enabled, setEnabled, historyError: historyError?.context === contextId ? historyError.message : null,
     isCharacterSheetOpen: enabled && isCharacterSheetOpen,
     setIsCharacterSheetOpen, rewardCompletion,
     notice: enabled && notice?.context === contextId ? notice : null,

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { 
+  Flag, Trophy, CalendarDays,
   CheckSquare2, 
   Calendar, 
   ListTodo, 
@@ -163,6 +164,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <ListTodo className="w-4 h-4 shrink-0 stroke-[1.8]" />
             <span className="truncate">Todas as tarefas</span>
           </button>
+
+          {([{ id: 'missions', label: 'Missões', Icon: Flag }, { id: 'week', label: 'Minha semana', Icon: CalendarDays }, { id: 'achievements', label: 'Conquistas', Icon: Trophy }] as const).map(({ id, label, Icon }) => <button key={id} type="button" onClick={() => handleNavClick(id)} aria-current={isNavActive(id) ? 'page' : undefined} className={`w-full min-h-11 flex items-center gap-2.5 px-3 rounded-xl text-xs font-medium ${isNavActive(id) ? 'bg-[#ede9fe] dark:bg-[#252249] text-[#5b4fe9] dark:text-[#a59bfb]' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50'}`}><Icon className="w-4 h-4" />{label}</button>)}
 
           {/* Fixadas */}
           <button
