@@ -1059,7 +1059,7 @@ export default function Home() {
           )}
           <nav
             aria-label="Visualizações do espaço"
-            className={`${currentGroupId ? "" : filterStatus === "week" ? "hidden" : "md:hidden"} flex flex-wrap gap-2 mb-4`}
+            className={`${currentGroupId ? "flex" : "hidden"} flex-wrap gap-2 mb-4`}
           >
             {(
               [
@@ -1068,27 +1068,22 @@ export default function Home() {
                 { id: "week", label: "Semana" },
                 { id: "achievements", label: "Conquistas" },
               ] as const
-            )
-              .filter(
-                ({ id }) =>
-                  currentGroupId || (id === "week" && filterStatus !== "week"),
-              )
-              .map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={filterStatus === id}
-                  onClick={() => {
-                    setFilterStatus(id);
-                    setSearchQuery("");
-                    setFilterCategory("all");
-                    setFilterPriority("all");
-                  }}
-                  className={`min-h-11 px-3 rounded-lg text-sm ${filterStatus === id ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
-                >
-                  {label}
-                </button>
-              ))}
+            ).map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={filterStatus === id}
+                onClick={() => {
+                  setFilterStatus(id);
+                  setSearchQuery("");
+                  setFilterCategory("all");
+                  setFilterPriority("all");
+                }}
+                className={`min-h-11 px-3 rounded-lg text-sm ${filterStatus === id ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
           {/* Conteúdo de Tarefas: Visualização Lista ou Kanban */}
           {filterStatus === "missions" ? (
@@ -1302,7 +1297,7 @@ export default function Home() {
         activeTab={
           currentGroupId
             ? "groups"
-            : ["today", "all", "missions", "achievements"].includes(
+            : ["today", "all", "week", "missions", "achievements"].includes(
                   filterStatus,
                 )
               ? (filterStatus as MobileTab)
