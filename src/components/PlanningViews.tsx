@@ -1,6 +1,7 @@
 "use client";
 
-import { Trophy, Flag, CalendarDays } from "lucide-react";
+import { useState } from "react";
+import { Trophy, Flag, CalendarDays, ChevronRight } from "lucide-react";
 import type { TodoItem, RpgBadge, GroupMember } from "../types/todo";
 import { getLocalDateString } from "../utils/dateUtils";
 
@@ -260,72 +261,183 @@ export function WeeklyPlanner({
     d.setDate(d.getDate() + i);
     return getLocalDateString(d);
   });
-  const undated = tasks.filter((t) => !t.dueDate && !t.completed);
+  const [selectedDay, setSelectedDay] = useState(today);
+  const activeDay = days.includes(selectedDay) ? selectedDay : today;
+  const byTime = (a: TodoItem, b: TodoItem) =>
+    Number(a.completed) - Number(b.completed) ||
+    (a.dueTime || "99:99").localeCompare(b.dueTime || "99:99") ||
+    a.title.localeCompare(b.title, "pt-BR");
+  const undated = tasks.filter((t) => !t.dueDate && !t.completed).sort(byTime);
+  const overdue = tasks
+    .filter((t) => t.dueDate && t.dueDate < today && !t.completed)
+    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || byTime(a, b));
+  const dayTasks = (day: string) =>
+    tasks.filter((t) => t.dueDate === day).sort(byTime);
+  const selectedTasks = dayTasks(activeDay);
+  const pendingCount = (list: TodoItem[]) =>
+    list.filter((t) => !t.completed).length;
+  const weekday = (day: string, short = false) =>
+    new Date(`${day}T12:00:00`)
+      .toLocaleDateString("pt-BR", {
+        weekday: short ? "short" : "long",
+      })
+      .replace(".", "");
+  const renderTask = (task: TodoItem, showDate = false) => (
+    <button
+      key={task.id}
+      type="button"
+      onClick={() => onEdit(task)}
+      className="flex w-full min-h-14 items-center gap-3 py-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-lg focus-visible:outline-2 focus-visible:outline-indigo-500 focus-visible:outline-offset-2"
+    >
+      <span className="w-12 shrink-0 text-xs tabular-nums text-zinc-600 dark:text-zinc-400 text-center">
+        {showDate && task.dueDate
+          ? dateLabel(task.dueDate)
+          : task.dueTime || "Sem hora"}
+      </span>
+      <span
+        className={`min-w-0 flex-1 text-sm [overflow-wrap:anywhere] ${task.completed ? "line-through text-zinc-500 dark:text-zinc-400" : "text-zinc-900 dark:text-zinc-100"}`}
+      >
+        {task.title}
+        {task.kind === "mission" && (
+          <span className="block mt-1 text-xs text-zinc-500 dark:text-zinc-400 no-underline">
+            Missão · {task.subTasks.filter((s) => s.completed).length}/
+            {task.subTasks.length} etapas
+          </span>
+        )}
+      </span>
+      <ChevronRight
+        size={16}
+        aria-hidden="true"
+        className="shrink-0 text-zinc-400"
+      />
+    </button>
+  );
   return (
-    <section className="space-y-4" aria-label="Planejamento semanal">
-      <p className="text-sm text-zinc-500">
-        Organize os próximos sete dias. Toque em uma tarefa para ajustar o prazo
-        e distribuir sua semana.
-      </p>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <section className="space-y-5" aria-label="Planejamento semanal">
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          {dateLabel(days[0])} — {dateLabel(days[6])}
+        </p>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Toque em uma tarefa para editar ou reagendar.
+        </p>
+      </div>
+      <div className="md:hidden space-y-5">
+        <div
+          className="overflow-x-auto pb-1"
+          aria-label="Escolher dia da semana"
+        >
+          <div className="grid grid-cols-7 gap-1 min-w-[322px]">
+            {days.map((day) => {
+              const pending = pendingCount(dayTasks(day));
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  aria-pressed={activeDay === day}
+                  aria-controls="weekly-selected-day"
+                  aria-label={`${weekday(day)}, ${dateLabel(day)}${day === today ? ", hoje" : ""}, ${pending} pendentes`}
+                  onClick={() => setSelectedDay(day)}
+                  className={`flex min-h-20 min-w-11 flex-col items-center justify-center gap-1 rounded-xl focus-visible:outline-2 focus-visible:outline-indigo-500 focus-visible:outline-offset-2 ${activeDay === day ? "bg-indigo-600 text-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"}`}
+                >
+                  <span className="text-xs capitalize">
+                    {weekday(day, true)}
+                  </span>
+                  <span className="text-lg font-semibold tabular-nums">
+                    {Number(day.slice(-2))}
+                  </span>
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${pending ? (activeDay === day ? "bg-white" : "bg-indigo-600 dark:bg-indigo-400") : "bg-transparent"}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div id="weekly-selected-day" className={panel}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+            <h2 className="font-semibold">
+              {activeDay === today ? "Hoje" : weekday(activeDay)}{" "}
+              <span className="font-normal text-sm text-zinc-500 dark:text-zinc-400">
+                · {dateLabel(activeDay)}
+              </span>
+            </h2>
+            <span className="text-xs text-zinc-600 dark:text-zinc-400">
+              {pendingCount(selectedTasks)} pendente
+              {pendingCount(selectedTasks) === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {selectedTasks.map((t) => renderTask(t))}
+          </div>
+          {!selectedTasks.length && (
+            <p className="py-5 text-sm text-zinc-600 dark:text-zinc-400">
+              Nenhuma tarefa para este dia.
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="hidden md:grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {days.map((day) => {
-          const list = tasks.filter((t) => t.dueDate === day);
-          const pending = list.filter((t) => !t.completed).length;
+          const list = dayTasks(day);
+          const pending = pendingCount(list);
           return (
             <article key={day} className={panel}>
               <h2 className="font-semibold flex gap-2 items-center">
-                <CalendarDays size={16} className="text-indigo-500" />
-                {new Date(`${day}T12:00:00`).toLocaleDateString("pt-BR", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "short",
-                })}
+                <CalendarDays
+                  size={16}
+                  aria-hidden="true"
+                  className="text-indigo-500 shrink-0"
+                />
+                {weekday(day)} · {dateLabel(day)}
               </h2>
-              <p className="text-xs text-zinc-500 mt-1">
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                 {pending} pendente{pending === 1 ? "" : "s"}
               </p>
-              <div className="mt-3 space-y-1">
-                {list.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => onEdit(t)}
-                    className={`block w-full text-left min-h-11 rounded-lg px-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-sm break-words ${t.completed ? "line-through text-zinc-500" : ""}`}
-                  >
-                    {t.dueTime && (
-                      <span className="text-xs text-zinc-500 mr-2">
-                        {t.dueTime}
-                      </span>
-                    )}
-                    {t.title}
-                  </button>
-                ))}
-                {!list.length && (
-                  <p className="text-sm text-zinc-500 py-3">Dia livre</p>
-                )}
+              <div className="mt-3 divide-y divide-zinc-100 dark:divide-zinc-800">
+                {list.map((t) => renderTask(t))}
               </div>
+              {!list.length && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 py-3">
+                  Dia livre
+                </p>
+              )}
             </article>
           );
         })}
       </div>
-      {undated.length > 0 && (
-        <div className={panel}>
-          <h2 className="font-semibold">Sem prazo · {undated.length}</h2>
-          <p className="text-xs text-zinc-500 mt-1">
-            Escolha o dia para estas tarefas.
-          </p>
-          {undated.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onEdit(t)}
-              className="block min-h-11 text-sm text-indigo-600 dark:text-indigo-400 text-left break-words"
-            >
-              {t.title}
-            </button>
-          ))}
-        </div>
-      )}
+      {[
+        {
+          title: "Atrasadas",
+          list: overdue,
+          description: "Reagende as tarefas que ficaram para trás.",
+          showDate: true,
+        },
+        {
+          title: "Sem prazo",
+          list: undated,
+          description: "Escolha um dia para estas tarefas.",
+          showDate: false,
+        },
+      ]
+        .filter(({ list }) => list.length)
+        .map(({ title, list, description, showDate }) => (
+          <details key={title} className={panel}>
+            <summary className="min-h-11 cursor-pointer font-semibold content-center rounded-lg focus-visible:outline-2 focus-visible:outline-indigo-500">
+              {title}{" "}
+              <span className="ml-2 font-normal text-sm text-zinc-600 dark:text-zinc-400">
+                {list.length}
+              </span>
+            </summary>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 mb-2">
+              {description}
+            </p>
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {list.map((t) => renderTask(t, showDate))}
+            </div>
+          </details>
+        ))}
     </section>
   );
 }

@@ -1059,7 +1059,7 @@ export default function Home() {
           )}
           <nav
             aria-label="Visualizações do espaço"
-            className={`${currentGroupId ? "" : "md:hidden"} flex flex-wrap gap-2 mb-4`}
+            className={`${currentGroupId ? "" : filterStatus === "week" ? "hidden" : "md:hidden"} flex flex-wrap gap-2 mb-4`}
           >
             {(
               [
@@ -1069,7 +1069,10 @@ export default function Home() {
                 { id: "achievements", label: "Conquistas" },
               ] as const
             )
-              .filter(({ id }) => currentGroupId || id === "week")
+              .filter(
+                ({ id }) =>
+                  currentGroupId || (id === "week" && filterStatus !== "week"),
+              )
               .map(({ id, label }) => (
                 <button
                   key={id}
