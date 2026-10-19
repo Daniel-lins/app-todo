@@ -12,7 +12,7 @@ export interface TaskTransport {
 export function taskPayload(task: TodoItem, userId: string, groupId: string | null) {
   return {
     id: task.id, user_id: userId, group_id: groupId, title: task.title, kind: task.kind || 'task',
-    planning: { recurrence: task.recurrence || null, series_id: task.recurrenceSeriesId || null, anchor_day: task.recurrenceAnchorDay || null, assigned_to: task.assignedTo || null },
+    planning: { action_plan: task.actionPlan || null, recurrence: task.recurrence || null, series_id: task.recurrenceSeriesId || null, anchor_day: task.recurrenceAnchorDay || null, assigned_to: task.assignedTo || null },
     description: task.description || null, completed: task.completed,
     status: task.status || (task.completed ? 'completed' : 'todo'),
     priority: task.priority, category: task.category, due_date: task.dueDate || null,

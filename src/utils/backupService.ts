@@ -1,3 +1,4 @@
+import { cleanActionPlan } from './actionPlan';
 /**
  * Serviço de validação, importação e exportação de backups do AppToDo.
  * Implementa formato versionado, validação exaustiva de todos os itens e subtarefas,
@@ -46,6 +47,7 @@ export function generateBackupData(todos: TodoItem[], spaceName?: string, reward
   // Limpa campos internos sensíveis se existirem e preserva apenas dados de domínio das tarefas
   const cleanTodos: TodoItem[] = todos.map((t, idx) => ({
     id: t.id,
+    actionPlan: cleanActionPlan(t.actionPlan),
     kind: t.kind === 'mission' ? 'mission' : 'task',
     recurrence: t.recurrence, recurrenceSeriesId: t.recurrenceSeriesId, recurrenceAnchorDay: t.recurrenceAnchorDay,
     title: t.title.trim(),
@@ -426,6 +428,7 @@ export function validateAndParseBackupFile(
         todos: [], version, totalTasks: 0, totalSubTasks: 0, conflictsWithExisting: 0, duplicateIdsFound: 0 };
     }
     validatedTodos.push({
+      actionPlan: cleanActionPlan(obj.actionPlan),
       id,
       title: obj.title.trim(),
       kind: obj.kind === 'mission' ? 'mission' : 'task',

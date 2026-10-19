@@ -22,6 +22,8 @@ export function TaskDiscussion({
   const client = useMemo(() => createClient(), []);
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState("");
+  const [commitment, setCommitment] = useState("");
+  const [commitmentDate, setCommitmentDate] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -92,6 +94,54 @@ export function TaskDiscussion({
           {error}
         </p>
       )}
+      <details className="border-t border-zinc-200 dark:border-zinc-800 pt-2">
+        <summary className="cursor-pointer min-h-11 content-center text-sm font-medium">
+          Combinar um compromisso com o grupo (opcional)
+        </summary>
+        <div className="space-y-3 py-3">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Será publicado como comentário para todos os membros deste grupo.
+            Não cria cobranças automáticas nem compartilha sua reflexão privada.
+          </p>
+          <label className="block text-sm">
+            O que você pretende entregar?
+            <input
+              maxLength={300}
+              value={commitment}
+              onChange={(e) => setCommitment(e.target.value)}
+              className="block w-full border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 mt-1 bg-transparent"
+              placeholder="Ex.: terminar o primeiro rascunho"
+            />
+          </label>
+          <label className="block text-sm">
+            Até quando?
+            <input
+              type="date"
+              value={commitmentDate}
+              onChange={(e) => setCommitmentDate(e.target.value)}
+              className="block w-full min-w-0 border border-zinc-300 dark:border-zinc-700 rounded-lg p-3 mt-1 bg-transparent"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              busy || !!text.trim() || !commitment.trim() || !commitmentDate
+            }
+            onClick={() =>
+              setText(
+                `Meu compromisso: ${commitment.trim()}. Até ${new Date(commitmentDate + "T12:00:00").toLocaleDateString("pt-BR")}.`,
+              )
+            }
+            className="min-h-11 px-3 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm disabled:opacity-50"
+          >
+            Preparar comentário para revisar
+          </button>
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+            Revise o campo abaixo e toque em Enviar comentário para
+            compartilhar. Esvazie um rascunho existente antes de preparar outro.
+          </p>
+        </div>
+      </details>
       <label className="block text-sm">
         Novo comentário
         <textarea

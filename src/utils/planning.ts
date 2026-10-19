@@ -27,6 +27,7 @@ export function nextOccurrence(
     recurrenceAnchorDay:
       task.recurrenceAnchorDay || new Date(`${base}T12:00:00`).getDate(),
     dueDate,
+    actionPlan: task.actionPlan ? { ...task.actionPlan, startDate: undefined, startTime: undefined, events: [] } : undefined,
     completed: false,
     completedAt: undefined,
     status: "todo",
@@ -48,6 +49,7 @@ export function nextOccurrence(
 export function isInView(task: TodoItem, view: string, today: string): boolean {
   if (view === "today")
     return (
+      (!task.completed && task.actionPlan?.startDate === today) ||
       task.dueDate === today ||
       (!task.completed && !!task.dueDate && task.dueDate < today)
     );

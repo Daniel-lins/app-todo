@@ -1,3 +1,4 @@
+import { startReminderDue } from './actionPlan';
 /**
  * Serviço de notificações com definição clara das capacidades reais,
  * prevenção de avisos duplicados para o mesmo prazo e tratamento
@@ -201,3 +202,28 @@ export const NOTIFICATION_LIMITS_DOC = {
   antiSpam:
     'Cada prazo de tarefa é notificado no máximo uma vez para evitar alertas repetidos.',
 };
+
+/** Start plans are independent from deadline push. Requires an open app and permission. */
+export function checkStartPlansAndNotify(todos: TodoItem[], scope: string, now = new Date()): number {
+  if (getNotificationStatus() !== 'granted') return 0;
+  const storageKey = `apptodo_start_reminders_v1:${scope}`;
+  const day = getLocalDateString(now);
+  let seen: Set<string>;
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+    seen = new Set(saved.day === day && Array.isArray(saved.keys) ? saved.keys.filter((k: unknown) => typeof k === 'string') : []);
+  } catch { return 0; }
+  let count = 0;
+  for (const task of todos) {
+    if (!startReminderDue(task, now)) continue;
+    const key = `${task.id}:${task.actionPlan?.startDate}:${task.actionPlan?.startTime}`;
+    if (seen.has(key) || seen.size >= 5000) continue;
+    // Reserve before dispatch; if storage is blocked, do not produce repeated alerts.
+    seen.add(key);
+    try { localStorage.setItem(storageKey, JSON.stringify({ day, keys: [...seen] })); }
+    catch { return count; }
+    const sent = sendAppNotification('Hora do próximo passo', { body: 'Seu início planejado chegou. Abra o AppToDo para começar.', tag: `start:${scope}:${key}` });
+    if (sent) count++;
+  }
+  return count;
+}

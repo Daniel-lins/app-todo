@@ -1,4 +1,5 @@
 'use client';
+import { cleanActionPlan } from '../utils/actionPlan';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
@@ -82,7 +83,7 @@ export function useTodos() {
   interface SupabaseTaskRow {
     id: string;
     kind?: TodoItem['kind'];
-    planning?: { recurrence?: TodoItem['recurrence']; series_id?: string; anchor_day?: number; assigned_to?: string };
+    planning?: { action_plan?: unknown; recurrence?: TodoItem['recurrence']; series_id?: string; anchor_day?: number; assigned_to?: string };
     title: string;
     description?: string | null;
     completed: boolean;
@@ -113,6 +114,7 @@ export function useTodos() {
     return {
       id: row.id,
       kind: row.kind || 'task',
+      actionPlan: cleanActionPlan(row.planning?.action_plan),
       recurrence: row.planning?.recurrence || undefined, recurrenceSeriesId: row.planning?.series_id || undefined,
       recurrenceAnchorDay: row.planning?.anchor_day || undefined, assignedTo: row.planning?.assigned_to || undefined,
       title: row.title,

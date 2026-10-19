@@ -1,3 +1,4 @@
+import { cleanActionPlan } from './actionPlan';
 /**
  * Regras de domínio centrais para tarefas, subtarefas e métricas.
  * Garante consistência absoluta entre completed, status, completedAt,
@@ -146,6 +147,7 @@ export function sanitizeTaskUpdates(
 } {
   const cleanUpdates: Partial<TodoItem> = { updatedAt: nowISO };
   const dbUpdates: Record<string, unknown> = { updated_at: nowISO };
+  if ('actionPlan' in updates) cleanUpdates.actionPlan = cleanActionPlan(updates.actionPlan);
   if ('recurrence' in updates) cleanUpdates.recurrence = updates.recurrence;
   if ('recurrenceSeriesId' in updates) cleanUpdates.recurrenceSeriesId = updates.recurrenceSeriesId;
   if ('recurrenceAnchorDay' in updates) cleanUpdates.recurrenceAnchorDay = updates.recurrenceAnchorDay;

@@ -203,6 +203,17 @@ test('real PostgreSQL migrations, permissions and atomic persistence', async t =
       await db.query("UPDATE public.push_deliveries SET delivered=true");
       assert.deepEqual((await db.query<{ result: unknown[] }>('SELECT public.claim_push_reminders() result')).rows[0].result, []);
     });
+    await t.test('action plans persist through atomic RPC and are readable only by the owning group', async () => {
+      await asUser(owner);
+      const row = snapshot('action-plan', 'Read a chapter');
+      const actionPlan = { nextAction: 'Open chapter 3', startDate: '2026-10-18', startTime: '10:00', events: [{ id: 'start-1', kind: 'started', at: '2026-10-18T12:00:00Z' }] };
+      Object.assign(row.task, { planning: { action_plan: actionPlan } });
+      await save([row]);
+      await asUser(member);
+      assert.deepEqual((await db.query<{ planning: { action_plan: unknown } }>("SELECT planning FROM tasks WHERE id='action-plan'")).rows[0].planning.action_plan, actionPlan);
+      await asUser(outsider);
+      assert.equal((await db.query("SELECT id FROM tasks WHERE id='action-plan'")).rows.length, 0);
+    });
     await t.test('deleting a group cascades its history without recreating orphan rewards', async () => {
       await asUser(owner);
       await db.query('DELETE FROM groups WHERE id=$1', [group]);

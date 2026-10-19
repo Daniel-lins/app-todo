@@ -45,6 +45,9 @@ import {
   backgroundRemindersEnabled,
 } from "../utils/backgroundReminders";
 import { triggerConfetti } from "../utils/confetti";
+import { ActionCoach } from "../components/ActionCoach";
+import { getContextId } from "../utils/todoStorage";
+import { checkStartPlansAndNotify } from "../utils/notificationService";
 import { TaskCard } from "../components/TaskCard";
 import { TaskModal } from "../components/TaskModal";
 import { KanbanBoard } from "../components/KanbanBoard";
@@ -311,12 +314,14 @@ export default function Home() {
 
   // Verificação periódica de prazos
   useEffect(() => {
+    checkStartPlansAndNotify(todos, getContextId(user?.id, currentGroupId));
     if (!backgroundRemindersEnabled(user?.id)) checkDeadlinesAndNotify(todos);
     const interval = setInterval(() => {
+      checkStartPlansAndNotify(todos, getContextId(user?.id, currentGroupId));
       if (!backgroundRemindersEnabled(user?.id)) checkDeadlinesAndNotify(todos);
     }, 60000);
     return () => clearInterval(interval);
-  }, [todos, user?.id]);
+  }, [todos, user?.id, currentGroupId]);
 
   // Formatação de data em português: "Quinta-feira, 24 de setembro"
   const formattedToday = useMemo(() => {
@@ -1085,6 +1090,18 @@ export default function Home() {
               </button>
             ))}
           </nav>
+          {isLoaded && filterStatus === "today" && (
+            <ActionCoach
+              key={`${getContextId(user?.id, currentGroupId)}:${todayDateStr}`}
+              tasks={todos}
+              history={rewardHistory}
+              today={todayDateStr}
+              scope={getContextId(user?.id, currentGroupId)}
+              grouped={!!currentGroupId}
+              onUpdate={updateTodo}
+              onEdit={handleOpenEdit}
+            />
+          )}
           {/* Conteúdo de Tarefas: Visualização Lista ou Kanban */}
           {filterStatus === "missions" ? (
             <MissionsView

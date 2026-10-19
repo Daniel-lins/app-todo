@@ -20,6 +20,8 @@ import {
   GroupMember,
 } from "../types/todo";
 import { CATEGORIES, PRIORITIES } from "../utils/todoConstants";
+import { ActionPlanFields } from "./ActionPlanFields";
+import type { ActionPlan } from "../types/todo";
 import { TaskDiscussion } from "./TaskDiscussion";
 import { TaskStepsEditor } from "./TaskStepsEditor";
 import { useAccessibleModal } from "../hooks/useAccessibleModal";
@@ -47,6 +49,9 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
   userId,
   members = [],
 }) => {
+  const [actionPlan, setActionPlan] = useState<ActionPlan>(
+    initialData?.actionPlan || {},
+  );
   const [kind, setKind] = useState<"task" | "mission">(
     initialData?.kind || initialKind,
   );
@@ -112,6 +117,7 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
     try {
       await onSubmit({
         title: title.trim(),
+        actionPlan,
         kind,
         recurrence: kind === "task" ? recurrence : undefined,
         assignedTo: assignedTo || undefined,
@@ -245,6 +251,11 @@ const TaskModalContent: React.FC<TaskModalProps> = ({
               <TaskStepsEditor steps={subTasks} onChange={setSubTasks} />
             )}
 
+            <ActionPlanFields
+              value={actionPlan}
+              onChange={setActionPlan}
+              grouped={!!initialData?.groupId || members.length > 0}
+            />
             {/* Toggle Optional Details Button */}
             <div className="pt-0.5">
               <button

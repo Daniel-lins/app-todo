@@ -19,7 +19,19 @@ export interface SubTask {
 export type TaskSyncState = 'synced' | 'syncing' | 'local_only' | 'error';
 export type AppSyncStatus = 'synced' | 'syncing' | 'local_only' | 'error';
 
+export interface ActionPlan {
+  nextAction?: string;
+  startDate?: string;
+  startTime?: string;
+  cue?: string;
+  place?: string;
+  obstacle?: string;
+  response?: string;
+  events?: { id: string; at: string; kind: 'started' | 'advanced'; note?: string }[];
+}
+
 export interface TodoItem {
+  actionPlan?: ActionPlan;
   id: string;
   kind?: 'task' | 'mission';
   recurrence?: 'daily' | 'weekly' | 'monthly';
