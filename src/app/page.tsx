@@ -45,6 +45,8 @@ import {
   backgroundRemindersEnabled,
 } from "../utils/backgroundReminders";
 import { triggerConfetti } from "../utils/confetti";
+import { InAppInbox, NotificationBell } from "../components/InAppInbox";
+import { useInAppNotifications } from "../hooks/useInAppNotifications";
 import { ActionCoach } from "../components/ActionCoach";
 import { getContextId } from "../utils/todoStorage";
 import { checkStartPlansAndNotify } from "../utils/notificationService";
@@ -278,6 +280,13 @@ export default function Home() {
     useState<NotificationStatus>(() =>
       typeof window !== "undefined" ? getNotificationStatus() : "default",
     );
+
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const inbox = useInAppNotifications(
+    getContextId(user?.id, currentGroupId),
+    todos,
+    isLoaded,
+  );
 
   // Tab mobile ativa
   const [mobileTab, setMobileTab] = useState<MobileTab>("today");
@@ -697,6 +706,10 @@ export default function Home() {
               ) : null}
             </div>
 
+            <NotificationBell
+              unread={inbox.unread}
+              onClick={() => setIsInboxOpen(true)}
+            />
             {/* Avatar / Acesso à conta */}
             <button
               type="button"
@@ -732,6 +745,10 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
+            <NotificationBell
+              unread={inbox.unread}
+              onClick={() => setIsInboxOpen(true)}
+            />
             {/* Sincronização compacta */}
             {syncStatus === "synced" && pendingSyncCount === 0 && user ? (
               <span
@@ -1369,6 +1386,24 @@ export default function Home() {
         </div>
       )}
 
+      {isInboxOpen && (
+        <InAppInbox
+          key={`inbox:${getContextId(user?.id, currentGroupId)}`}
+          items={inbox.items}
+          tasks={todos}
+          error={inbox.error}
+          onRead={inbox.markRead}
+          onClose={() => setIsInboxOpen(false)}
+          onTask={(task) => {
+            setIsInboxOpen(false);
+            handleOpenEdit(task);
+          }}
+          onSettings={() => {
+            setIsInboxOpen(false);
+            setIsNotificationModalOpen(true);
+          }}
+        />
+      )}
       {/* Modais do Aplicativo */}
       <TaskModal
         isOpen={isModalOpen}

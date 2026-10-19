@@ -10,6 +10,7 @@ import {
   playPomodoroBeep, prefersReducedMotion,
 } from '../utils/pomodoroTimer';
 import { triggerConfetti } from '../utils/confetti';
+import { addFocusNotice } from '../utils/inAppNotifications';
 import { sendPomodoroNotification } from '../utils/notificationService';
 
 interface UsePomodoroOptions {
@@ -57,6 +58,7 @@ export function usePomodoro({ todos, isLoaded, contextId, onSessionComplete }: U
           playPomodoroBeep(current.soundEnabled);
           if (!prefersReducedMotion()) triggerConfetti();
           sendPomodoroNotification(loaded.mode, loaded.taskTitle);
+          try { addFocusNotice(contextId, loaded.sessionId, loaded.mode === 'focus' ? 'Sessão de foco encerrada' : 'Pausa encerrada', loaded.taskId || undefined); } catch { /* Timer remains available if the inbox cannot be saved. */ }
         }
       };
       try {
@@ -75,7 +77,7 @@ export function usePomodoro({ todos, isLoaded, contextId, onSessionComplete }: U
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [isLoaded, storageKey, publish]);
+  }, [isLoaded, storageKey, publish, contextId]);
 
   const change = useCallback((transform: (value: PomodoroSession) => PomodoroSession) => {
     if (!isLoaded) return;

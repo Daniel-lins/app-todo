@@ -7,6 +7,7 @@ import {
   withActionEvent,
   actionMetrics,
 } from "../utils/actionPlan";
+import { addFocusNotice } from "../utils/inAppNotifications";
 import { getLocalDateString } from "../utils/dateUtils";
 import { planInput } from "./ActionPlanFields";
 
@@ -118,6 +119,19 @@ export function ActionCoach({
   const remaining = session
     ? Math.max(0, Math.ceil((session.endAt - now) / 1000))
     : 0;
+  useEffect(() => {
+    if (!session || remaining > 0) return;
+    try {
+      addFocusNotice(
+        scope,
+        `short:${session.taskId}:${session.endAt}`,
+        "Sessão curta encerrada",
+        session.taskId,
+      );
+    } catch {
+      /* Ending a timer must not depend on inbox storage. */
+    }
+  }, [session, remaining, scope]);
   const metrics = actionMetrics(tasks, today);
   const completedIds = new Set(
     [...new Map([...history, ...tasks].map((t) => [t.id, t])).values()]
